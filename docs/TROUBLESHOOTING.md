@@ -203,5 +203,5 @@ docker system df -v
 cd /opt/traefik && docker compose restart
 
 # Verificar routers ativos no Traefik
-curl -s http://localhost:8080/api/http/routers | python3 -m json.tool
+docker exec traefik wget -qO- http://localhost:8080/api/http/routers 2>/dev/null | python3 -m json.tool
 ```
