@@ -1,119 +1,210 @@
 # Guia de Administração — Nextcloud SaaS Manager
 
-Este documento detalha o uso do script `nextcloud-manage` para o gerenciamento completo do ciclo de vida das instâncias de clientes na plataforma Nextcloud SaaS.
+Este documento detalha todos os procedimentos de administração de instâncias de clientes no servidor de produção.
 
-## Visão Geral
+---
 
-O comando principal é `nextcloud-manage`, que é um link simbólico para o script `manage.sh`. Todos os comandos devem ser executados com `sudo`.
+## Informações do Servidor
 
-## Sintaxe dos Comandos
+| Item | Valor |
+|---|---|
+| Script | `/opt/nextcloud-customers/manage.sh` |
+| Link simbólico | `/usr/local/bin/nextcloud-manage` |
+| Diretório das instâncias | `/opt/nextcloud-customers/<nome-cliente>/` |
+| Diretório de backups | `/opt/nextcloud-customers/backups/` |
+| Traefik | `/opt/traefik/` |
+| Certificados SSL | `/opt/traefik/acme.json` (gerenciado automaticamente pelo Traefik/Let's Encrypt) |
 
-A maioria dos comandos segue a sintaxe:
+---
 
-`sudo nextcloud-manage <nome-do-cliente> <dominio-nextcloud> <comando>`
+## Sintaxe Geral
 
--   `<nome-do-cliente>`: Um nome curto e único para o cliente (ex: `acme`, `globex`). Usado para nomear containers e diretórios.
--   `<dominio-nextcloud>`: O domínio principal da instância Nextcloud (ex: `nextcloud.acme.com`).
--   `<comando>`: A ação a ser executada (`create`, `status`, `backup`, etc.).
-
-Para comandos que não precisam de um domínio (como `backup` ou `status`), você pode usar um placeholder como `_` ou qualquer string no lugar do domínio.
-
-## Comandos Disponíveis
-
-### `create` - Criar Nova Instância
-
-Provisiona uma nova instância completa do Nextcloud, incluindo banco de dados, Redis, Collabora Online e servidor TURN.
-
-**Importante:** Certifique-se de que os registros DNS para o Nextcloud e o Collabora já foram criados e propagados antes de executar este comando.
-
-```bash
-# Sintaxe
-sudo nextcloud-manage <nome-do-cliente> <dominio-nextcloud> create
-
-# Exemplo
-sudo nextcloud-manage acme nextcloud.acme.com create
+```
+sudo nextcloud-manage <nome-do-cliente> <domínio-ou-placeholder> <comando>
 ```
 
-Ao final, o script exibirá uma tabela com todas as credenciais geradas.
+O segundo argumento é o domínio do Nextcloud para os comandos `create` e `restore`, ou `_` (underscore) como placeholder para os demais comandos. O comando `list` não precisa de argumentos adicionais.
 
-### `list` - Listar Todas as Instâncias
+---
 
-Mostra uma lista de todas as instâncias de clientes instaladas no servidor.
+## Onboarding de Novo Cliente
+
+### 1. Configurar DNS
+
+Antes de criar a instância, configure **dois registros DNS do tipo A** no provedor DNS do cliente:
+
+| Registro | Exemplo | Aponta para |
+|---|---|---|
+| Domínio Nextcloud | `nextcloud.acme.com.br` | IP do servidor |
+| Domínio Collabora | `collabora-nextcloud.acme.com.br` | IP do servidor |
+
+O domínio do Collabora é gerado automaticamente pelo script adicionando o prefixo `collabora-` ao domínio do Nextcloud.
+
+Verifique a propagação do DNS antes de prosseguir:
+
+```bash
+dig +short nextcloud.acme.com.br
+dig +short collabora-nextcloud.acme.com.br
+```
+
+Ambos devem retornar o IP do servidor.
+
+### 2. Criar a Instância
+
+```bash
+sudo nextcloud-manage acme nextcloud.acme.com.br create
+```
+
+O script gera automaticamente todas as senhas e credenciais, que são salvas no arquivo `/opt/nextcloud-customers/acme/.env`. Ao final da criação, as credenciais são exibidas na tela.
+
+### 3. Verificar a Instância
+
+```bash
+sudo nextcloud-manage acme _ status
+```
+
+Este comando mostra o status de todos os 7 containers, as URLs de acesso e verifica se o Nextcloud está respondendo.
+
+### 4. Consultar Credenciais
+
+As credenciais ficam armazenadas no arquivo `.env` da instância:
+
+```bash
+sudo cat /opt/nextcloud-customers/acme/.env
+```
+
+O arquivo contém: nome do cliente, domínio, domínio do Collabora, senhas do banco de dados (root e nextcloud), senha do admin do Nextcloud, senha do admin do Collabora, secret do TURN server e porta do TURN.
+
+---
+
+## Operações do Dia a Dia
+
+### Listar Todas as Instâncias
 
 ```bash
 sudo nextcloud-manage list
 ```
 
-### `status` - Verificar Status de uma Instância
-
-Exibe o status dos containers Docker de uma instância específica.
+### Ver Status de uma Instância
 
 ```bash
-# Sintaxe
-sudo nextcloud-manage <nome-do-cliente> _ status
-
-# Exemplo
 sudo nextcloud-manage acme _ status
 ```
 
-### `credentials` - Exibir Credenciais de uma Instância
-
-Mostra novamente a tabela de credenciais que foi gerada durante a criação da instância.
+### Parar uma Instância
 
 ```bash
-# Sintaxe
-sudo nextcloud-manage <nome-do-cliente> _ credentials
-
-# Exemplo
-sudo nextcloud-manage acme _ credentials
+sudo nextcloud-manage acme _ stop
 ```
 
-### `backup` - Fazer Backup de uma Instância
-
-Cria um backup completo da instância, incluindo o banco de dados, arquivos de configuração e dados do usuário. O backup é salvo em `/opt/nextcloud-customers/backups/`.
+### Iniciar uma Instância
 
 ```bash
-# Sintaxe
-sudo nextcloud-manage <nome-do-cliente> _ backup
+sudo nextcloud-manage acme _ start
+```
 
-# Exemplo
+---
+
+## Backup e Restauração
+
+### Fazer Backup
+
+```bash
 sudo nextcloud-manage acme _ backup
 ```
 
-### `restore` - Restaurar uma Instância a partir de um Backup
+O backup é salvo em `/opt/nextcloud-customers/backups/` com o nome `acme-backup-YYYYMMDD_HHMMSS.tar.gz`. Inclui todos os dados do Nextcloud e um dump completo do banco de dados.
 
-Restaura uma instância a partir de um arquivo de backup. A instância será completamente sobrescrita com os dados do backup.
+### Restaurar de um Backup
 
 ```bash
-# Sintaxe
-sudo nextcloud-manage <nome-do-cliente> <caminho-do-backup> restore
-
-# Exemplo
-sudo nextcloud-manage acme /opt/nextcloud-customers/backups/acme-backup-20260211.tar.gz restore
+sudo nextcloud-manage acme /opt/nextcloud-customers/backups/acme-backup-20260211_025535.tar.gz restore
 ```
 
-### `update` - Atualizar uma Instância
+---
 
-Faz o pull das últimas imagens Docker para os componentes da instância (Nextcloud, Collabora, etc.) e recria os containers.
+## Atualização de Instância
+
+O comando `update` faz backup automático, puxa as novas imagens Docker e executa o upgrade do Nextcloud:
 
 ```bash
-# Sintaxe
-sudo nextcloud-manage <nome-do-cliente> _ update
-
-# Exemplo
 sudo nextcloud-manage acme _ update
 ```
 
-### `remove` - Remover uma Instância
+---
 
-**Atenção: Esta ação é destrutiva e irreversível!**
+## Remoção de Instância
 
-Para e remove todos os containers da instância e apaga permanentemente todos os dados, incluindo o banco de dados, arquivos de configuração e dados do usuário.
+**ATENÇÃO: Esta operação é irreversível. Todos os dados serão perdidos.**
+
+Faça backup antes de remover:
 
 ```bash
-# Sintaxe
-sudo nextcloud-manage <nome-do-cliente> _ remove
-
-# Exemplo
+sudo nextcloud-manage acme _ backup
 sudo nextcloud-manage acme _ remove
 ```
+
+---
+
+## Acesso Direto ao Nextcloud (occ)
+
+Para executar comandos `occ` diretamente no container do Nextcloud:
+
+```bash
+docker exec -u www-data acme-app php occ <comando>
+```
+
+Exemplos úteis:
+
+```bash
+# Ver status da instância
+docker exec -u www-data acme-app php occ status
+
+# Listar apps instalados
+docker exec -u www-data acme-app php occ app:list
+
+# Adicionar índices faltantes no banco
+docker exec -u www-data acme-app php occ db:add-missing-indices
+
+# Desativar modo de manutenção
+docker exec -u www-data acme-app php occ maintenance:mode --off
+
+# Criar novo usuário
+docker exec -u www-data acme-app php occ user:add --display-name="João Silva" joao
+```
+
+---
+
+## Acesso ao Banco de Dados
+
+Para acessar o banco de dados MariaDB de uma instância:
+
+```bash
+# Consultar a senha no .env
+sudo grep MYSQL_ROOT_PASSWORD /opt/nextcloud-customers/acme/.env
+
+# Acessar o banco
+docker exec -it acme-db mysql -u root -p nextcloud
+```
+
+---
+
+## Traefik e Certificados SSL
+
+O Traefik gerencia automaticamente os certificados SSL via Let's Encrypt. Para verificar:
+
+```bash
+# Status do Traefik
+docker ps --filter name=traefik
+
+# Logs do Traefik
+docker logs traefik --tail 50
+
+# Dashboard do Traefik (acessível via browser)
+# http://IP_DO_SERVIDOR:8080/dashboard/
+
+# Verificar routers ativos
+curl -s http://localhost:8080/api/http/routers | python3 -m json.tool
+```
+
+Os certificados são armazenados em `/opt/traefik/acme.json` e renovados automaticamente pelo Traefik antes de expirarem.
