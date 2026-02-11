@@ -77,7 +77,7 @@ O servidor deve atender aos seguintes requisitos antes de iniciar o deploy:
 | **Sistema Operacional** | Ubuntu 24.04 LTS (instalação limpa) |
 | **Virtualização** | **KVM/QEMU obrigatório** — NÃO use LXC (incompatível com Docker 29.x) |
 | **Acesso** | Root ou sudo sem senha |
-| **Portas livres** | 80 (HTTP), 443 (HTTPS), 8080 (Traefik Dashboard) |
+| **Portas livres** | 80 (HTTP), 443 (HTTPS) |
 | **Internet** | Acesso à internet para baixar imagens Docker e emitir certificados |
 | **E-mail** | Um e-mail válido para registro de certificados Let's Encrypt |
 
