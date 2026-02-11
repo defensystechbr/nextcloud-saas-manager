@@ -21,7 +21,7 @@
 # Requisitos:
 #   - Ubuntu 24.04 LTS (KVM recomendado, NÃO LXC)
 #   - Acesso root/sudo
-#   - Portas 80, 443 e 8080 livres
+#   - Portas 80 e 443 livres
 #   - Acesso à internet
 #
 # IMPORTANTE:
@@ -200,10 +200,13 @@ log_success "Estrutura de diretórios criada"
 # ============================================================
 log_info "Etapa 4/5: Configurando Traefik..."
 
+# Criar traefik.yml
+# NOTA: Usar APENAS httpChallenge (NÃO misturar com tlsChallenge)
+# NOTA: NÃO usar file provider apontando para si mesmo
 cat > /opt/traefik/config/traefik.yml << EOF
 api:
   dashboard: true
-  insecure: true
+  insecure: false
 
 entryPoints:
   web:
@@ -235,9 +238,13 @@ log:
   level: INFO
 EOF
 
+# Criar acme.json com permissões corretas
 touch /opt/traefik/acme.json
 chmod 600 /opt/traefik/acme.json
 
+# Criar docker-compose.yml do Traefik
+# NOTA: Usar traefik:latest (v3.x+) — obrigatório para Docker 29.x+ (API mínima 1.44)
+# NOTA: Rede proxy DEVE ser external: true (já criada acima)
 cat > /opt/traefik/docker-compose.yml << 'EOF'
 services:
   traefik:
@@ -247,7 +254,6 @@ services:
     ports:
       - "80:80"
       - "443:443"
-      - "8080:8080"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./config/traefik.yml:/traefik.yml:ro
@@ -262,13 +268,15 @@ networks:
     external: true
 EOF
 
+# Iniciar Traefik
 cd /opt/traefik
 docker compose up -d
 
+# Validar Traefik
 log_info "Aguardando Traefik iniciar..."
 TRAEFIK_OK=false
 for i in $(seq 1 30); do
-    if curl -s http://localhost:8080/api/overview >/dev/null 2>&1; then
+    if docker ps --filter name=traefik --format '{{.Status}}' 2>/dev/null | grep -q "Up"; then
         TRAEFIK_OK=true
         break
     fi
@@ -276,13 +284,14 @@ for i in $(seq 1 30); do
 done
 
 if [ "$TRAEFIK_OK" = true ]; then
-    TRAEFIK_VER=$(curl -s http://localhost:8080/api/overview 2>/dev/null | python3 -c "import json,sys; print(json.load(sys.stdin).get('version','desconhecida'))" 2>/dev/null || echo "desconhecida")
-    log_success "Traefik v${TRAEFIK_VER} rodando e acessível"
+    TRAEFIK_VER=$(docker inspect traefik --format '{{.Config.Image}}' 2>/dev/null || echo "latest")
+    log_success "Traefik (${TRAEFIK_VER}) rodando"
 else
     log_error "Traefik não está respondendo! Verifique: docker logs traefik"
     exit 1
 fi
 
+# Verificar que o provider Docker está funcionando (sem erros de API version)
 sleep 3
 if docker logs traefik 2>&1 | grep -q "client version.*too old"; then
     log_error "Traefik incompatível com a versão do Docker!"
@@ -297,31 +306,41 @@ log_success "Traefik comunicando com Docker corretamente"
 # ============================================================
 log_info "Etapa 5/5: Instalando manage.sh..."
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-if [ -f "${SCRIPT_DIR}/manage.sh" ]; then
-    cp "${SCRIPT_DIR}/manage.sh" /opt/nextcloud-customers/manage.sh
-    log_info "manage.sh copiado do diretório do repositório"
-elif [ -n "$MANAGE_URL" ]; then
+if [ -n "$MANAGE_URL" ]; then
+    # Baixar de URL fornecida
     curl -sSL "$MANAGE_URL" -o /opt/nextcloud-customers/manage.sh
 elif [ -f /tmp/manage.sh ]; then
+    # Copiar de arquivo local
     cp /tmp/manage.sh /opt/nextcloud-customers/manage.sh
 else
-    log_warning "manage.sh não encontrado. Copie manualmente para /opt/nextcloud-customers/manage.sh"
+    log_warning "manage.sh não fornecido. Copie manualmente para /opt/nextcloud-customers/manage.sh"
+    log_warning "Use: scp manage.sh user@${SERVER_IP}:/opt/nextcloud-customers/manage.sh"
 fi
 
 if [ -f /opt/nextcloud-customers/manage.sh ]; then
+    # Atualizar SERVER_IP no manage.sh
     sed -i "s|SERVER_IP=\"[^\"]*\"|SERVER_IP=\"${SERVER_IP}\"|" /opt/nextcloud-customers/manage.sh
+
+    # Garantir que usa docker compose (plugin v2)
+    # O manage.sh v9.0 já usa "docker compose" (sem hífen)
+
+    # Permissões e link simbólico
     chmod +x /opt/nextcloud-customers/manage.sh
     ln -sf /opt/nextcloud-customers/manage.sh /usr/local/bin/nextcloud-manage
+
     log_success "manage.sh instalado: nextcloud-manage"
 fi
 
+# ============================================================
+# FINALIZAÇÃO
+# ============================================================
 echo ""
 echo "============================================"
 log_success "Servidor de produção pronto!"
 echo "============================================"
 echo ""
 echo "  Resumo da instalação:"
+echo "  ─────────────────────────────────────────"
 echo "  IP:              ${SERVER_IP}"
 echo "  Docker:          $(docker --version 2>/dev/null | grep -oP '\d+\.\d+\.\d+')"
 echo "  Docker Compose:  $(docker compose version 2>/dev/null | grep -oP '\d+\.\d+\.\d+')"
@@ -330,13 +349,17 @@ echo "  ACME Email:      ${ACME_EMAIL}"
 echo "  manage.sh:       /opt/nextcloud-customers/manage.sh"
 echo "  Comando:         nextcloud-manage"
 echo "  Backups:         /opt/nextcloud-customers/backups/"
-echo "  Traefik Dashboard: http://${SERVER_IP}:8080/dashboard/"
+echo "  Traefik Dashboard: desabilitado (segurança)"
+echo "  Traefik Logs:      docker logs traefik"
 echo ""
 echo "  Para criar a primeira instância:"
+echo "  ─────────────────────────────────────────"
 echo "  1. Configure os registros DNS:"
-echo "     nextcloud.dominio.com.br      -> A -> ${SERVER_IP}"
-echo "     collabora-nextcloud.dominio.com.br -> A -> ${SERVER_IP}"
+echo "     nextcloud.dominio.com.br      → A → ${SERVER_IP}"
+echo "     collabora-nextcloud.dominio.com.br → A → ${SERVER_IP}"
+echo ""
 echo "  2. Aguarde a propagação do DNS"
+echo ""
 echo "  3. Execute:"
 echo "     sudo nextcloud-manage cliente1 nextcloud.dominio.com.br create"
 echo ""
