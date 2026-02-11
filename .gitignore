@@ -1,0 +1,28 @@
+# Arquivos de ambiente
+.env
+*.env
+
+# Certificados e chaves
+acme.json
+*.pem
+*.key
+*.crt
+
+# Backups
+backups/
+*.tar.gz
+
+# Logs
+logs/
+*.log
+
+# Sistema
+.DS_Store
+Thumbs.db
+
+# Editor
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
