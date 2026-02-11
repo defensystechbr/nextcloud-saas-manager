@@ -200,11 +200,8 @@ docker ps --filter name=traefik
 # Logs do Traefik
 docker logs traefik --tail 50
 
-# Dashboard do Traefik (acessível via browser)
-# http://IP_DO_SERVIDOR:8080/dashboard/
-
-# Verificar routers ativos
-curl -s http://localhost:8080/api/http/routers | python3 -m json.tool
+# Verificar routers ativos (via docker exec)
+docker exec traefik wget -qO- http://localhost:8080/api/http/routers 2>/dev/null | python3 -m json.tool
 ```
 
 Os certificados são armazenados em `/opt/traefik/acme.json` e renovados automaticamente pelo Traefik antes de expirarem.
