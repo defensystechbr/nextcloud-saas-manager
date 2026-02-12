@@ -14,13 +14,16 @@ Este documento cobre os problemas mais comuns que podem ocorrer durante a opera�
 
 Esta é a causa mais comum. O Let's Encrypt precisa acessar o domínio via HTTP (porta 80) para validar a propriedade. Se o registro DNS não estiver apontando para o IP do servidor, a validação falhará.
 
+Cada instância requer **3 registros DNS**:
+
 ```bash
-# Verificar se o DNS está resolvendo corretamente
+# Verificar se os 3 DNS estão resolvendo corretamente
 dig +short nextcloud.acme.com.br
 dig +short collabora-nextcloud.acme.com.br
+dig +short signaling-nextcloud.acme.com.br
 ```
 
-Ambos devem retornar o IP do servidor. Se não retornarem, aguarde a propagação ou corrija os registros DNS.
+Todos devem retornar o IP do servidor. Se não retornarem, aguarde a propagação ou corrija os registros DNS.
 
 ### 2. Porta 80 bloqueada
 
@@ -62,7 +65,7 @@ docker logs traefik --tail 100 2>&1 | grep -i "acme\|error\|letsencrypt"
 ### 1. Container não está rodando
 
 ```bash
-# Verificar status da instância
+# Verificar status da instância (10 containers)
 sudo nextcloud-manage acme _ status
 
 # Se o container app não estiver rodando, ver os logs
@@ -180,18 +183,82 @@ docker exec -u www-data acme-app php occ config:app:get spreed turn_servers
 docker exec -u www-data acme-app php occ config:app:get spreed stun_servers
 ```
 
+### 4. Verificar o HPB (Signaling Server)
+
+O HPB é composto por 3 containers: NATS, Janus e Signaling.
+
+```bash
+# Verificar se os 3 containers HPB estão rodando
+docker ps --filter name=acme-nats
+docker ps --filter name=acme-janus
+docker ps --filter name=acme-signaling
+
+# Verificar logs do signaling
+docker logs acme-signaling --tail 50
+
+# Verificar se o signaling está registrado no Nextcloud
+docker exec -u www-data acme-app php occ config:app:get spreed signaling_servers
+
+# Verificar DNS do signaling
+dig +short signaling-nextcloud.acme.com.br
+
+# Testar HTTPS do signaling
+curl -sI https://signaling-nextcloud.acme.com.br
+```
+
+### 5. Verificar configurações HPB
+
+Os arquivos de configuração do HPB ficam em:
+
+```
+/opt/nextcloud-customers/acme/hpb/config/
+├── gnatsd.conf                         # NATS
+├── janus.jcfg                          # Janus Gateway
+├── janus.transport.websockets.jcfg     # Janus WebSocket
+└── janus.plugin.videoroom.jcfg         # Janus VideoRoom
+```
+
+---
+
+## Problema: AppAPI / HaRP não funciona
+
+**Sintomas:** Aviso no Admin Overview sobre AppAPI deploy daemon.
+
+### 1. Verificar o container HaRP
+
+```bash
+docker ps --filter name=acme-harp
+docker logs acme-harp --tail 50
+```
+
+### 2. Verificar o daemon registrado
+
+```bash
+docker exec -u www-data acme-app php occ app_api:daemon:list
+```
+
+### 3. Verificar saúde do HaRP
+
+O container HaRP tem healthcheck integrado. Verifique se está "healthy":
+
+```bash
+docker inspect acme-harp --format '{{.State.Health.Status}}'
+```
+
 ---
 
 ## Comandos Úteis para Diagnóstico
 
 ```bash
-# Ver todos os containers de uma instância
+# Ver todos os containers de uma instância (10 containers)
 docker ps --filter name=acme
 
 # Ver logs de qualquer container
 docker logs acme-app --tail 100
 docker logs acme-db --tail 100
 docker logs acme-collabora --tail 100
+docker logs acme-signaling --tail 100
+docker logs acme-harp --tail 100
 
 # Ver uso de disco das instâncias
 du -sh /opt/nextcloud-customers/*/
@@ -204,4 +271,13 @@ cd /opt/traefik && docker compose restart
 
 # Verificar routers ativos no Traefik
 docker exec traefik wget -qO- http://localhost:8080/api/http/routers 2>/dev/null | python3 -m json.tool
+
+# Limpar logs do Nextcloud
+docker exec -u www-data acme-app php occ log:manage --level=warning
+echo '[]' | docker exec -i acme-app tee /var/www/html/data/nextcloud.log > /dev/null
+
+# Ver credenciais da instância
+sudo nextcloud-manage acme _ credentials
+# Ou diretamente:
+sudo cat /opt/nextcloud-customers/acme/.credentials
 ```
