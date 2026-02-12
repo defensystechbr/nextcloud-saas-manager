@@ -13,13 +13,13 @@ O objetivo é permitir que qualquer pessoa com um servidor Ubuntu 24.04 (KVM) po
 | **Servidor Host** | Ubuntu 24.04 LTS (KVM recomendado, **não** LXC) |
 | **Orquestração** | Docker Engine 29.x + Docker Compose plugin v2 |
 | **Reverse Proxy** | Traefik v3.x+ (latest) com Let's Encrypt automático |
-| **Gerenciamento** | `manage.sh` v9.0 (script para CRUD de instâncias) |
-| **Isolamento** | Cada cliente roda em seu próprio conjunto de 7 containers |
+| **Gerenciamento** | `manage.sh` v10.0 (script para CRUD de instâncias) |
+| **Isolamento** | Cada cliente roda em seu próprio conjunto de **10 containers** |
 | **Rede** | Rede Docker `proxy` compartilhada para o Traefik |
 
 ### Containers por Instância de Cliente
 
-Cada instância criada pelo `manage.sh` gera os seguintes 7 containers:
+Cada instância criada pelo `manage.sh` gera os seguintes **10 containers**:
 
 | Container | Imagem | Função |
 |---|---|---|
@@ -27,9 +27,30 @@ Cada instância criada pelo `manage.sh` gera os seguintes 7 containers:
 | `<nome>-db` | `mariadb:10.11` | Banco de dados MariaDB |
 | `<nome>-redis` | `redis:alpine` | Cache e file locking |
 | `<nome>-collabora` | `collabora/code:latest` | Collabora Online (edição de documentos) |
-| `<nome>-turn` | `coturn/coturn:latest` | Servidor TURN para Nextcloud Talk |
+| `<nome>-turn` | `coturn/coturn:latest` | Servidor TURN/STUN para Nextcloud Talk |
 | `<nome>-cron` | `nextcloud:latest` | Background jobs via cron |
-| `<nome>-dsp` | `tecnativa/docker-socket-proxy:latest` | Docker Socket Proxy para AppAPI |
+| `<nome>-harp` | `nextcloud-appapi-harp:release` | HaRP — AppAPI daemon (substitui Docker Socket Proxy) |
+| `<nome>-nats` | `nats:2.10` | NATS messaging (HPB) |
+| `<nome>-janus` | `canyan/janus-gateway:latest` | Janus WebRTC Gateway (HPB) |
+| `<nome>-signaling` | `nextcloud-spreed-signaling:latest` | Spreed Signaling Server (HPB) |
+
+### DNS Necessários por Instância
+
+Cada instância requer **3 registros DNS do tipo A** apontando para o IP do servidor:
+
+| Registro DNS | Exemplo | Função |
+|---|---|---|
+| Domínio do Nextcloud | `nextcloud.acme.com.br` | Acesso à aplicação |
+| Domínio do Collabora | `collabora-nextcloud.acme.com.br` | Editor de documentos |
+| Domínio do Signaling | `signaling-nextcloud.acme.com.br` | HPB Talk (WebRTC) |
+
+Os domínios do Collabora e Signaling são gerados automaticamente pelo script com os prefixos `collabora-` e `signaling-` antes do domínio do Nextcloud. Exemplos:
+
+| Domínio Nextcloud | Domínio Collabora | Domínio Signaling |
+|---|---|---|
+| `nxu.defensys.seg.br` | `collabora-nxu.defensys.seg.br` | `signaling-nxu.defensys.seg.br` |
+| `nextcloud.acme.com.br` | `collabora-nextcloud.acme.com.br` | `signaling-nextcloud.acme.com.br` |
+| `cloud.empresa.com` | `collabora-cloud.empresa.com` | `signaling-cloud.empresa.com` |
 
 ### Estrutura de Diretórios no Servidor
 
@@ -47,16 +68,24 @@ Após o deploy, o servidor terá a seguinte estrutura:
 │       └── access.log
 │
 └── nextcloud-customers/              # Diretório principal da plataforma
-    ├── manage.sh                     # Script de gerenciamento (v9.0)
+    ├── manage.sh                     # Script de gerenciamento (v10.0)
     ├── backups/                      # Backups de todas as instâncias
     ├── <nome-cliente-1>/             # Instância do cliente 1
     │   ├── docker-compose.yml
     │   ├── .env                      # Credenciais e configuração
-    │   └── data/                     # Dados do Nextcloud
-    └── <nome-cliente-2>/             # Instância do cliente 2
-        ├── docker-compose.yml
-        ├── .env
-        └── data/
+    │   ├── .credentials              # Arquivo de credenciais legível
+    │   ├── app/                      # Dados do Nextcloud
+    │   ├── db/                       # Dados do MariaDB
+    │   ├── redis/                    # Dados do Redis
+    │   ├── harp-certs/               # Certificados HaRP
+    │   └── hpb/                      # Configurações HPB
+    │       └── config/
+    │           ├── gnatsd.conf
+    │           ├── janus.jcfg
+    │           ├── janus.transport.websockets.jcfg
+    │           └── janus.plugin.videoroom.jcfg
+    └── <nome-cliente-2>/
+        └── ...
 
 /usr/local/bin/
 └── nextcloud-manage -> /opt/nextcloud-customers/manage.sh   # Link simbólico
@@ -98,8 +127,8 @@ O script `deploy-server.sh` automatiza toda a preparação do servidor. Ele exec
 1. Atualiza o sistema e instala dependências (`curl`, `jq`, `pwgen`, `openssl`).
 2. Instala o Docker Engine e Docker Compose (plugin v2) do repositório oficial.
 3. Cria a rede Docker `proxy` e a estrutura de diretórios.
-4. Configura e inicia o Traefik v3.x (latest) com Let's Encrypt.
-5. Instala o `manage.sh` em `/opt/nextcloud-customers/` e cria o link simbólico `/usr/local/bin/nextcloud-manage`.
+4. Configura e inicia o Traefik v3.x (latest) com Let's Encrypt (sem porta 8080 exposta).
+5. Instala o `manage.sh` v10.0 em `/opt/nextcloud-customers/` e cria o link simbólico `/usr/local/bin/nextcloud-manage`.
 
 Execute com seu e-mail para o Let's Encrypt:
 
@@ -137,22 +166,15 @@ Onde:
 
 ### Passo 1: Configurar DNS (OBRIGATÓRIO antes de criar)
 
-Antes de criar uma nova instância, você **deve** configurar **dois registros DNS do tipo A** no provedor DNS do cliente, ambos apontando para o IP do servidor:
+Antes de criar uma nova instância, você **deve** configurar **3 registros DNS do tipo A** no provedor DNS do cliente, todos apontando para o IP do servidor:
 
 | Registro DNS (Tipo A) | Exemplo | Aponta para |
 |---|---|---|
 | Domínio do Nextcloud | `nextcloud.acme.com.br` | `IP_DO_SERVIDOR` |
 | Domínio do Collabora | `collabora-nextcloud.acme.com.br` | `IP_DO_SERVIDOR` |
+| Domínio do Signaling | `signaling-nextcloud.acme.com.br` | `IP_DO_SERVIDOR` |
 
-O domínio do Collabora é gerado automaticamente pelo script com o prefixo `collabora-` antes do domínio do Nextcloud. Exemplos:
-
-| Domínio Nextcloud | Domínio Collabora (gerado automaticamente) |
-|---|---|
-| `nxu.defensys.seg.br` | `collabora-nxu.defensys.seg.br` |
-| `nextcloud.acme.com.br` | `collabora-nextcloud.acme.com.br` |
-| `cloud.empresa.com` | `collabora-cloud.empresa.com` |
-
-**Aguarde a propagação do DNS** antes de prosseguir. O Traefik não conseguirá emitir o certificado SSL se o DNS não estiver resolvendo para o IP do servidor.
+**Aguarde a propagação do DNS** antes de prosseguir. O Traefik não conseguirá emitir os certificados SSL se o DNS não estiver resolvendo para o IP do servidor.
 
 ### Passo 2: Criar a Instância
 
@@ -161,19 +183,22 @@ sudo nextcloud-manage acme nextcloud.acme.com.br create
 ```
 
 O script irá:
-1. Gerar senhas aleatórias e seguras para todos os serviços.
-2. Criar o `docker-compose.yml` e o `.env` em `/opt/nextcloud-customers/acme/`.
-3. Subir os 7 containers.
-4. Aguardar o Nextcloud inicializar.
-5. Configurar Collabora, Talk (TURN), Redis, Client Push e demais apps.
-6. Exibir as credenciais completas da nova instância.
+1. Verificar se os 3 registros DNS estão resolvendo corretamente.
+2. Gerar senhas aleatórias e seguras para todos os serviços.
+3. Criar configurações HPB (Janus, NATS, Signaling).
+4. Criar o `docker-compose.yml` e o `.env` em `/opt/nextcloud-customers/acme/`.
+5. Subir os **10 containers**.
+6. Aguardar o Nextcloud inicializar.
+7. Configurar Collabora, Talk (TURN + HPB Signaling), Redis, HaRP (AppAPI), Client Push e demais apps.
+8. Exibir as credenciais completas da nova instância.
 
 ### Referência Completa de Comandos
 
 | Comando | Sintaxe | Descrição |
 |---|---|---|
-| **create** | `sudo nextcloud-manage acme nextcloud.acme.com.br create` | Cria uma nova instância completa |
-| **status** | `sudo nextcloud-manage acme _ status` | Mostra status dos containers e URLs |
+| **create** | `sudo nextcloud-manage acme nextcloud.acme.com.br create` | Cria uma nova instância completa (10 containers) |
+| **status** | `sudo nextcloud-manage acme _ status` | Mostra status dos 10 containers e URLs |
+| **credentials** | `sudo nextcloud-manage acme _ credentials` | Exibe as credenciais da instância |
 | **backup** | `sudo nextcloud-manage acme _ backup` | Faz backup completo (dados + banco) para `/opt/nextcloud-customers/backups/` |
 | **restore** | `sudo nextcloud-manage acme /caminho/do/backup.tar.gz restore` | Restaura uma instância a partir de um backup |
 | **stop** | `sudo nextcloud-manage acme _ stop` | Para todos os containers da instância |
@@ -188,6 +213,29 @@ Para resolver problemas comuns, consulte o [Guia de Troubleshooting](docs/TROUBL
 
 ---
 
+## Aplicativos Instalados Automaticamente
+
+Cada nova instância inclui os seguintes aplicativos pré-configurados:
+
+| Aplicativo | Descrição |
+|---|---|
+| **Nextcloud Office** (richdocuments) | Edição colaborativa via Collabora Online |
+| **Calendar** | Calendário com suporte a CalDAV |
+| **Contacts** | Contatos com suporte a CardDAV |
+| **Mail** | Cliente de e-mail integrado |
+| **Deck** | Kanban para gerenciamento de projetos |
+| **Forms** | Formulários e pesquisas |
+| **Notes** | Notas em Markdown |
+| **Tasks** | Gerenciamento de tarefas |
+| **Group Folders** | Pastas compartilhadas por grupo |
+| **Photos** | Galeria de fotos |
+| **Activity** | Registro de atividades |
+| **Talk** (spreed) | Chat, chamadas de voz/vídeo com HPB |
+| **AppAPI** | API para aplicativos externos (com HaRP) |
+| **Client Push** (notify_push) | Notificações push em tempo real |
+
+---
+
 ## Estrutura do Repositório
 
 ```
@@ -197,7 +245,7 @@ nextcloud-saas-manager/
 ├── .gitignore
 ├── scripts/
 │   ├── deploy-server.sh           # Script para preparar um novo servidor do zero
-│   └── manage.sh                  # Script para gerenciar instâncias de clientes (v9.0)
+│   └── manage.sh                  # Script para gerenciar instâncias de clientes (v10.0)
 └── docs/
     ├── ADMINISTRATION.md          # Guia completo de administração de instâncias
     └── TROUBLESHOOTING.md         # Guia para resolver problemas comuns
