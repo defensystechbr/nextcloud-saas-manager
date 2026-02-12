@@ -1,18 +1,20 @@
 #!/bin/bash
 # ============================================================
-# Nextcloud SaaS Manager v9.0
-# Script para gerenciar instâncias Nextcloud com Collabora Online
+# Nextcloud SaaS Manager v10.0
+# Script para gerenciar instâncias Nextcloud com Collabora,
+# HPB (Talk High Performance Backend) e HaRP (AppAPI)
 # Autor: Defensys
-# Data: 2026-02-10
+# Data: 2026-02-12
 # ============================================================
-# Changelog v9.0:
-#   - Docker Socket Proxy para AppAPI
-#   - Registro automático do daemon AppAPI via DSP
-#   - Middleware .well-known para CalDAV/CardDAV
-#   - Instalação automática do notify_push (Client Push)
-#   - Configuração do public_wopi_url para Collabora
-#   - Portas TURN dinâmicas (evitar conflito entre instâncias)
-#   - Melhorias no status, remoção e backup
+# Changelog v10.0:
+#   - HaRP substitui Docker Socket Proxy para AppAPI
+#   - HPB integrado: NATS + Janus Gateway + Spreed Signaling
+#   - 3 registros DNS por instância (+ signaling)
+#   - Configuração automática do signaling no Talk
+#   - Registro automático do daemon HaRP no AppAPI
+#   - Containers: 10 por instância (app, db, redis, collabora,
+#     turn, cron, harp, nats, janus, signaling)
+#   - Correção de segurança: Traefik sem porta 8080 exposta
 # ============================================================
 
 set -e
@@ -27,7 +29,7 @@ NC='\033[0m'
 # Diretório base
 BASE_DIR="/opt/nextcloud-customers"
 TRAEFIK_NETWORK="proxy"
-SERVER_IP="200.50.151.10"
+SERVER_IP=$(hostname -I | awk '{print $1}')
 
 # Função para exibir mensagens
 log_info() { echo -e "${BLUE}[INFO]${NC} $1"; }
@@ -38,6 +40,12 @@ log_warning() { echo -e "${YELLOW}[AVISO]${NC} $1"; }
 # Função para gerar senha aleatória
 generate_password() {
     openssl rand -base64 32 | tr -d "=+/" | cut -c1-25
+}
+
+# Função para gerar chave hex
+generate_hex_key() {
+    local length=${1:-32}
+    openssl rand -hex "$length"
 }
 
 # Função para encontrar porta TURN disponível
@@ -64,7 +72,6 @@ wait_for_nextcloud() {
     while [ $attempt -lt $max_attempts ]; do
         if docker exec -u www-data "$container" php occ status 2>/dev/null | grep -q "installed: true"; then
             log_success "Nextcloud instalado!"
-            # Aguardar mais 10s para autoconfig terminar
             sleep 10
             return 0
         fi
@@ -112,6 +119,16 @@ wait_for_container() {
     return 1
 }
 
+# Detectar comando docker compose (plugin v2 ou standalone)
+if docker compose version >/dev/null 2>&1; then
+    DC="docker compose"
+elif docker-compose --version >/dev/null 2>&1; then
+    DC="docker-compose"
+else
+    log_error "Docker Compose não encontrado!"
+    exit 1
+fi
+
 # ============================================================
 # FUNÇÃO PRINCIPAL: CRIAR INSTÂNCIA
 # ============================================================
@@ -124,26 +141,49 @@ create_instance() {
         exit 1
     fi
 
-    # Verificar se a instância já existe
     if [ -d "$BASE_DIR/$CLIENT_NAME" ]; then
         log_error "Instância $CLIENT_NAME já existe!"
         exit 1
     fi
 
+    # Derivar domínios
+    COLLABORA_DOMAIN="collabora-${DOMAIN}"
+    SIGNALING_DOMAIN="signaling-${DOMAIN}"
+
     log_info "============================================"
     log_info "Criando nova instância: $CLIENT_NAME"
-    log_info "Domínio: $DOMAIN"
+    log_info "Domínio Nextcloud:  $DOMAIN"
+    log_info "Domínio Collabora:  $COLLABORA_DOMAIN"
+    log_info "Domínio Signaling:  $SIGNALING_DOMAIN"
     log_info "============================================"
 
-    # Gerar senhas
+    # Verificar DNS
+    log_info "Verificando registros DNS..."
+    local DNS_OK=true
+    for dns_domain in "$DOMAIN" "$COLLABORA_DOMAIN" "$SIGNALING_DOMAIN"; do
+        if host "$dns_domain" >/dev/null 2>&1; then
+            log_success "  DNS OK: $dns_domain"
+        else
+            log_error "  DNS FALHA: $dns_domain — crie o registro A apontando para $SERVER_IP"
+            DNS_OK=false
+        fi
+    done
+    if [ "$DNS_OK" = false ]; then
+        log_error "Corrija os registros DNS antes de continuar!"
+        exit 1
+    fi
+
+    # Gerar senhas e chaves
     MYSQL_ROOT_PASSWORD=$(generate_password)
     MYSQL_PASSWORD=$(generate_password)
     NEXTCLOUD_ADMIN_PASSWORD=$(generate_password)
     COLLABORA_ADMIN_PASSWORD=$(generate_password)
     TURN_SECRET=$(generate_password)
-
-    # Derivar domínio do collabora
-    COLLABORA_DOMAIN="collabora-${DOMAIN}"
+    HARP_SHARED_KEY=$(generate_hex_key 16)
+    SIGNALING_SECRET=$(generate_hex_key 16)
+    SIGNALING_HASH_KEY=$(generate_hex_key 32)
+    SIGNALING_BLOCK_KEY=$(generate_hex_key 16)
+    SIGNALING_INTERNAL_SECRET=$(generate_hex_key 16)
 
     # Encontrar porta TURN disponível
     TURN_PORT=$(find_available_turn_port)
@@ -151,6 +191,7 @@ create_instance() {
 
     log_info "Criando diretórios..."
     mkdir -p "$BASE_DIR/$CLIENT_NAME"
+    mkdir -p "$BASE_DIR/$CLIENT_NAME/hpb/config"
 
     # Criar arquivo .env
     log_info "Criando arquivo .env..."
@@ -158,12 +199,69 @@ create_instance() {
 CLIENT_NAME=${CLIENT_NAME}
 DOMAIN=${DOMAIN}
 COLLABORA_DOMAIN=${COLLABORA_DOMAIN}
+SIGNALING_DOMAIN=${SIGNALING_DOMAIN}
 MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
 MYSQL_PASSWORD=${MYSQL_PASSWORD}
 NEXTCLOUD_ADMIN_PASSWORD=${NEXTCLOUD_ADMIN_PASSWORD}
 COLLABORA_ADMIN_PASSWORD=${COLLABORA_ADMIN_PASSWORD}
 TURN_SECRET=${TURN_SECRET}
 TURN_PORT=${TURN_PORT}
+HARP_SHARED_KEY=${HARP_SHARED_KEY}
+SIGNALING_SECRET=${SIGNALING_SECRET}
+SIGNALING_HASH_KEY=${SIGNALING_HASH_KEY}
+SIGNALING_BLOCK_KEY=${SIGNALING_BLOCK_KEY}
+SIGNALING_INTERNAL_SECRET=${SIGNALING_INTERNAL_SECRET}
+EOF
+
+    # ============================================================
+    # CRIAR CONFIGURAÇÕES HPB (Janus + NATS)
+    # ============================================================
+    log_info "Criando configurações HPB..."
+
+    cat > "$BASE_DIR/$CLIENT_NAME/hpb/config/gnatsd.conf" << 'EOF'
+listen: 0.0.0.0:4222
+logtime: true
+EOF
+
+    cat > "$BASE_DIR/$CLIENT_NAME/hpb/config/janus.jcfg" << 'EOF'
+general: {
+    configs_folder = "/usr/etc/janus"
+    plugins_folder = "/usr/lib/janus/plugins"
+    transports_folder = "/usr/lib/janus/transports"
+    events_folder = "/usr/lib/janus/events"
+    log_to_stdout = true
+    debug_level = 4
+    admin_secret = "janusoverlord"
+    api_secret = "janusrocks"
+    full_trickle = true
+}
+nat: {
+    stun_server = "stun.l.google.com"
+    stun_port = 19302
+    nice_debug = false
+    full_trickle = true
+}
+media: {
+    rtp_port_range = "20000-40000"
+}
+EOF
+
+    cat > "$BASE_DIR/$CLIENT_NAME/hpb/config/janus.transport.websockets.jcfg" << 'EOF'
+general: {
+    ws = true
+    ws_port = 8188
+    ws_ip = "0.0.0.0"
+    wss = false
+}
+admin: {
+    admin_ws = false
+}
+EOF
+
+    cat > "$BASE_DIR/$CLIENT_NAME/hpb/config/janus.plugin.videoroom.jcfg" << 'EOF'
+general: {
+    admin_key = "supersecret"
+}
 EOF
 
     # ============================================================
@@ -171,8 +269,8 @@ EOF
     # ============================================================
     log_info "Criando docker-compose.yml..."
 
-    # Usar variável para backtick
     BT='`'
+    CLIENT_UPPER=$(echo "$CLIENT_NAME" | tr '[:lower:]' '[:upper:]' | tr '-' '_')
 
     cat > "$BASE_DIR/$CLIENT_NAME/docker-compose.yml" << EOF
 services:
@@ -226,7 +324,7 @@ services:
       - NC_maintenance_window_start=1
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.${CLIENT_NAME}-app.rule=Host(${BT}${DOMAIN}${BT})"
+      - "traefik.http.routers.${CLIENT_NAME}-app.rule=Host(${BT}\${DOMAIN}${BT})"
       - "traefik.http.routers.${CLIENT_NAME}-app.entrypoints=websecure"
       - "traefik.http.routers.${CLIENT_NAME}-app.tls=true"
       - "traefik.http.routers.${CLIENT_NAME}-app.tls.certresolver=letsencrypt"
@@ -261,7 +359,7 @@ services:
       - MKNOD
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.${CLIENT_NAME}-collabora.rule=Host(${BT}${COLLABORA_DOMAIN}${BT})"
+      - "traefik.http.routers.${CLIENT_NAME}-collabora.rule=Host(${BT}\${COLLABORA_DOMAIN}${BT})"
       - "traefik.http.routers.${CLIENT_NAME}-collabora.entrypoints=websecure"
       - "traefik.http.routers.${CLIENT_NAME}-collabora.tls=true"
       - "traefik.http.routers.${CLIENT_NAME}-collabora.tls.certresolver=letsencrypt"
@@ -276,8 +374,8 @@ services:
     container_name: ${CLIENT_NAME}-turn
     restart: always
     ports:
-      - "${TURN_PORT}:3478"
-      - "${TURN_PORT}:3478/udp"
+      - "\${TURN_PORT}:3478"
+      - "\${TURN_PORT}:3478/udp"
     command: >
       -n
       --log-file=stdout
@@ -286,7 +384,7 @@ services:
       --fingerprint
       --use-auth-secret
       --static-auth-secret=\${TURN_SECRET}
-      --realm=${DOMAIN}
+      --realm=\${DOMAIN}
       --total-quota=100
       --bps-capacity=0
       --stale-nonce
@@ -306,22 +404,82 @@ services:
     networks:
       - default
 
-  docker-socket-proxy:
-    image: tecnativa/docker-socket-proxy:latest
-    container_name: ${CLIENT_NAME}-dsp
+  harp:
+    image: ghcr.io/nextcloud/nextcloud-appapi-harp:release
+    container_name: ${CLIENT_NAME}-harp
     restart: always
-    privileged: true
+    hostname: ${CLIENT_NAME}-harp
     environment:
-      - CONTAINERS=1
-      - IMAGES=1
-      - AUTH=1
-      - POST=1
-      - NETWORKS=1
-      - VOLUMES=1
+      - HP_SHARED_KEY=\${HARP_SHARED_KEY}
+      - NC_INSTANCE_URL=https://\${DOMAIN}
+      - HP_LOG_LEVEL=info
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./harp-certs:/certs
     networks:
       - default
+      - proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.${CLIENT_NAME}-exapps.rule=Host(${BT}\${DOMAIN}${BT}) && PathPrefix(${BT}/exapps/${BT})"
+      - "traefik.http.routers.${CLIENT_NAME}-exapps.entrypoints=websecure"
+      - "traefik.http.routers.${CLIENT_NAME}-exapps.tls=true"
+      - "traefik.http.routers.${CLIENT_NAME}-exapps.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.${CLIENT_NAME}-exapps.priority=100"
+      - "traefik.http.services.${CLIENT_NAME}-exapps.loadbalancer.server.port=8780"
+      - "traefik.docker.network=proxy"
+
+  nats:
+    image: nats:2.10
+    container_name: ${CLIENT_NAME}-nats
+    restart: always
+    volumes:
+      - ./hpb/config/gnatsd.conf:/config/gnatsd.conf:ro
+    command: ["-c", "/config/gnatsd.conf"]
+    networks:
+      - default
+
+  janus:
+    image: canyan/janus-gateway:latest
+    container_name: ${CLIENT_NAME}-janus
+    restart: always
+    command: ["janus", "--full-trickle"]
+    volumes:
+      - ./hpb/config/janus.jcfg:/usr/etc/janus/janus.jcfg:ro
+      - ./hpb/config/janus.transport.websockets.jcfg:/usr/etc/janus/janus.transport.websockets.jcfg:ro
+      - ./hpb/config/janus.plugin.videoroom.jcfg:/usr/etc/janus/janus.plugin.videoroom.jcfg:ro
+    networks:
+      - default
+
+  signaling:
+    image: strukturag/nextcloud-spreed-signaling:latest
+    container_name: ${CLIENT_NAME}-signaling
+    restart: always
+    depends_on:
+      - nats
+      - janus
+    environment:
+      - BACKENDS=${CLIENT_NAME}
+      - BACKEND_${CLIENT_UPPER}_URLS=https://\${DOMAIN}
+      - BACKEND_${CLIENT_UPPER}_SHARED_SECRET=\${SIGNALING_SECRET}
+      - NATS_URL=nats://nats:4222
+      - JANUS_URL=ws://janus:8188
+      - HASH_KEY=\${SIGNALING_HASH_KEY}
+      - BLOCK_KEY=\${SIGNALING_BLOCK_KEY}
+      - INTERNAL_SECRET=\${SIGNALING_INTERNAL_SECRET}
+      - HTTP_LISTEN=0.0.0.0:8080
+      - TRUSTED_PROXIES=172.16.0.0/12,192.168.0.0/16,10.0.0.0/8
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.${CLIENT_NAME}-signaling.rule=Host(${BT}\${SIGNALING_DOMAIN}${BT})"
+      - "traefik.http.routers.${CLIENT_NAME}-signaling.entrypoints=websecure"
+      - "traefik.http.routers.${CLIENT_NAME}-signaling.tls=true"
+      - "traefik.http.routers.${CLIENT_NAME}-signaling.tls.certresolver=letsencrypt"
+      - "traefik.http.services.${CLIENT_NAME}-signaling.loadbalancer.server.port=8080"
+      - "traefik.docker.network=proxy"
+    networks:
+      - default
+      - proxy
 
 networks:
   default:
@@ -356,17 +514,28 @@ TURN Server:
   Secret: ${TURN_SECRET}
   Porta: ${TURN_PORT}
   Endereço: turn:${SERVER_IP}:${TURN_PORT}
+
+Signaling Server:
+  URL: https://${SIGNALING_DOMAIN}
+  Secret: ${SIGNALING_SECRET}
+
+HaRP (AppAPI):
+  Shared Key: ${HARP_SHARED_KEY}
+
+DNS necessários:
+  ${DOMAIN} → ${SERVER_IP}
+  ${COLLABORA_DOMAIN} → ${SERVER_IP}
+  ${SIGNALING_DOMAIN} → ${SERVER_IP}
 EOF
 
-    # Salvar log da instalação
     local LOG_FILE="$BASE_DIR/$CLIENT_NAME/install.log"
 
     # ============================================================
     # INICIAR CONTÊINERES
     # ============================================================
-    log_info "Iniciando contêineres..."
+    log_info "Iniciando contêineres (10 containers)..."
     cd "$BASE_DIR/$CLIENT_NAME"
-    docker compose up -d 2>&1 | tee -a "$LOG_FILE"
+    $DC up -d 2>&1 | tee -a "$LOG_FILE"
 
     # Aguardar Nextcloud ficar instalado
     wait_for_nextcloud "${CLIENT_NAME}-app" 180
@@ -381,11 +550,11 @@ EOF
     local APP="${CLIENT_NAME}-app"
 
     # 1. Configurar background jobs via cron
-    log_info "[1/14] Configurando background jobs..."
+    log_info "[1/16] Configurando background jobs..."
     run_occ "$APP" background:cron
 
     # 2. Configurar Redis
-    log_info "[2/14] Configurando Redis..."
+    log_info "[2/16] Configurando Redis..."
     run_occ "$APP" config:system:set memcache.local --value='\OC\Memcache\APCu'
     run_occ "$APP" config:system:set memcache.distributed --value='\OC\Memcache\Redis'
     run_occ "$APP" config:system:set memcache.locking --value='\OC\Memcache\Redis'
@@ -393,7 +562,7 @@ EOF
     run_occ "$APP" config:system:set redis port --value=6379 --type=integer
 
     # 3. Configurar trusted_proxies e overwrite
-    log_info "[3/14] Configurando trusted_proxies e overwrite..."
+    log_info "[3/16] Configurando trusted_proxies e overwrite..."
     run_occ "$APP" config:system:set trusted_proxies 0 --value='172.16.0.0/12'
     run_occ "$APP" config:system:set trusted_proxies 1 --value='192.168.0.0/16'
     run_occ "$APP" config:system:set trusted_proxies 2 --value='10.0.0.0/8'
@@ -404,81 +573,86 @@ EOF
     run_occ "$APP" config:system:set allow_local_remote_servers --value=true --type=boolean
 
     # 4. Corrigir índices do banco de dados
-    log_info "[4/14] Corrigindo índices do banco de dados..."
+    log_info "[4/16] Corrigindo índices do banco de dados..."
     run_occ "$APP" db:add-missing-indices
     run_occ "$APP" db:add-missing-columns || true
     run_occ "$APP" db:add-missing-primary-keys || true
 
     # 5. Executar reparos e migração de mimetypes
-    log_info "[5/14] Executando reparos e migração de mimetypes..."
+    log_info "[5/16] Executando reparos e migração de mimetypes..."
     run_occ "$APP" maintenance:repair --include-expensive
     run_occ "$APP" maintenance:mimetype:update-db
 
     # 6. Instalar aplicativos essenciais
-    log_info "[6/14] Instalando aplicativos essenciais..."
+    log_info "[6/16] Instalando aplicativos essenciais..."
     for app in richdocuments calendar contacts deck forms groupfolders mail notes tasks photos activity spreed notify_push; do
         log_info "  -> $app"
         run_occ "$APP" app:install "$app" 2>/dev/null || run_occ "$APP" app:enable "$app" 2>/dev/null || true
     done
 
     # 7. Aguardar Collabora ficar pronto e configurar
-    log_info "[7/14] Configurando Collabora Online..."
-    log_info "  Aguardando Collabora ficar pronto..."
+    log_info "[7/16] Configurando Collabora Online..."
     wait_for_container "${CLIENT_NAME}-collabora" "curl -sSf http://localhost:9980/" 60
 
     run_occ "$APP" config:app:set richdocuments wopi_url --value="https://${COLLABORA_DOMAIN}"
     run_occ "$APP" config:app:set richdocuments public_wopi_url --value="https://${COLLABORA_DOMAIN}"
     run_occ "$APP" config:app:set richdocuments wopi_allowlist --value="0.0.0.0/0"
     run_occ "$APP" config:app:set richdocuments disable_certificate_verification --value="yes"
-    # Forçar refresh das capabilities do Collabora
     run_occ "$APP" richdocuments:activate-config 2>/dev/null || true
-    # Atualizar capabilities cache
-    run_occ "$APP" maintenance:repair 2>/dev/null || true
 
     # 8. Configurar Talk com TURN/STUN server
-    log_info "[8/14] Configurando Talk com TURN/STUN server..."
+    log_info "[8/16] Configurando Talk com TURN/STUN server..."
     run_occ "$APP" config:app:set spreed turn_servers --value="[{\"server\":\"turn:${SERVER_IP}:${TURN_PORT}\",\"secret\":\"${TURN_SECRET}\",\"protocols\":\"udp,tcp\"}]"
-    run_occ "$APP" config:app:set spreed stun_servers --value="[{\"server\":\"stun:${SERVER_IP}:${TURN_PORT}\"}]"
+    run_occ "$APP" config:app:set spreed stun_servers --value="[\"stun:${SERVER_IP}:${TURN_PORT}\"]"
 
-    # 9. Instalar e configurar AppAPI com Docker Socket Proxy
-    log_info "[9/14] Configurando AppAPI com Docker Socket Proxy..."
+    # 9. Configurar Talk HPB (Signaling Server)
+    log_info "[9/16] Configurando Talk HPB (Signaling Server)..."
+    run_occ "$APP" config:app:set spreed signaling_servers --value="{\"servers\":[{\"server\":\"https://${SIGNALING_DOMAIN}\",\"verify\":true}],\"secret\":\"${SIGNALING_SECRET}\"}"
+
+    # 10. Instalar e configurar AppAPI com HaRP
+    log_info "[10/16] Configurando AppAPI com HaRP..."
     docker exec -u www-data "$APP" php occ app:install app_api 2>/dev/null || true
     docker exec -u www-data "$APP" php occ app:enable app_api 2>/dev/null || true
 
-    # Aguardar Docker Socket Proxy ficar pronto
-    log_info "  Aguardando Docker Socket Proxy..."
-    wait_for_container "${CLIENT_NAME}-dsp" "ls /" 30
+    # Aguardar HaRP ficar pronto
+    log_info "  Aguardando HaRP..."
+    sleep 10
 
-    # Registrar daemon com Docker Socket Proxy
-    log_info "  Registrando daemon AppAPI..."
+    # Registrar daemon HaRP
+    log_info "  Registrando daemon HaRP..."
     docker exec -u www-data "$APP" php occ app_api:daemon:register \
-        docker_install "Docker Socket Proxy" docker-install http "${CLIENT_NAME}-dsp:2375" \
-        "https://${DOMAIN}" --net="${CLIENT_NAME}_default" --set-default 2>/dev/null || true
-    log_success "  AppAPI configurado com Docker Socket Proxy"
+        harp_install "HaRP" docker-install https "${CLIENT_NAME}-harp:8780" \
+        "https://${DOMAIN}" --net="${CLIENT_NAME}_default" \
+        --haproxy_password="${HARP_SHARED_KEY}" --set-default 2>/dev/null || true
+    log_success "  AppAPI configurado com HaRP"
 
-    # 10. Configurar trusted domains extras
-    log_info "[10/14] Configurando trusted domains..."
+    # 11. Configurar trusted domains extras
+    log_info "[11/16] Configurando trusted domains..."
     run_occ "$APP" config:system:set trusted_domains 0 --value="${DOMAIN}"
     run_occ "$APP" config:system:set trusted_domains 1 --value="${COLLABORA_DOMAIN}"
+    run_occ "$APP" config:system:set trusted_domains 2 --value="${SIGNALING_DOMAIN}"
 
-    # 11. Configurar notify_push (Client Push)
-    log_info "[11/14] Configurando Client Push (notify_push)..."
+    # 12. Configurar notify_push (Client Push)
+    log_info "[12/16] Configurando Client Push (notify_push)..."
     run_occ "$APP" config:app:set notify_push base_endpoint --value="https://${DOMAIN}/push" 2>/dev/null || true
-    log_success "  Client Push configurado"
 
-    # 12. Corrigir índices novamente (após instalar apps)
-    log_info "[12/14] Corrigindo índices pós-instalação de apps..."
+    # 13. Corrigir índices novamente (após instalar apps)
+    log_info "[13/16] Corrigindo índices pós-instalação de apps..."
     run_occ "$APP" db:add-missing-indices
 
-    # 13. Limpar logs e definir nível
-    log_info "[13/14] Limpando logs e finalizando..."
+    # 14. Limpar logs e definir nível
+    log_info "[14/16] Limpando logs e finalizando..."
     docker exec "$APP" bash -c 'truncate -s 0 /var/www/html/data/nextcloud.log' 2>/dev/null || true
     run_occ "$APP" log:manage --level=warning
 
-    # 14. Verificação final de segurança
-    log_info "[14/14] Configurações finais de segurança..."
+    # 15. Configurações finais de segurança
+    log_info "[15/16] Configurações finais de segurança..."
     run_occ "$APP" config:system:set htaccess.RewriteBase --value='/'
     run_occ "$APP" maintenance:update:htaccess 2>/dev/null || true
+
+    # 16. Reparo final
+    log_info "[16/16] Reparo final..."
+    run_occ "$APP" maintenance:repair 2>/dev/null || true
 
     # ============================================================
     # VERIFICAÇÃO FINAL
@@ -519,18 +693,24 @@ EOF
         log_warning "Talk: pode não estar instalado"
     fi
 
-    # Verificar AppAPI
+    # Verificar AppAPI + HaRP
     if docker exec -u www-data "$APP" php occ app:list 2>/dev/null | grep -q "app_api"; then
         log_success "AppAPI: OK"
     else
         log_warning "AppAPI: pode não estar instalado"
     fi
 
-    # Verificar AppAPI daemon
-    if docker exec -u www-data "$APP" php occ app_api:daemon:list 2>/dev/null | grep -q "docker_install"; then
-        log_success "AppAPI Daemon (DSP): OK"
+    if docker exec -u www-data "$APP" php occ app_api:daemon:list 2>/dev/null | grep -q "harp_install"; then
+        log_success "AppAPI Daemon (HaRP): OK"
     else
-        log_warning "AppAPI Daemon: não registrado"
+        log_warning "AppAPI Daemon HaRP: não registrado"
+    fi
+
+    # Verificar HaRP container
+    if docker ps --filter "name=${CLIENT_NAME}-harp" --format '{{.Status}}' | grep -q "healthy"; then
+        log_success "HaRP Container: OK (healthy)"
+    else
+        log_warning "HaRP Container: verificar status"
     fi
 
     # Verificar notify_push
@@ -547,12 +727,14 @@ EOF
         log_warning "TURN Server: pode não estar pronto"
     fi
 
-    # Verificar Docker Socket Proxy
-    if docker exec "$APP" curl -s http://${CLIENT_NAME}-dsp:2375/version >/dev/null 2>&1; then
-        log_success "Docker Socket Proxy: OK"
-    else
-        log_warning "Docker Socket Proxy: pode não estar acessível"
-    fi
+    # Verificar HPB containers
+    for hpb_container in nats janus signaling; do
+        if docker ps --filter "name=${CLIENT_NAME}-${hpb_container}" --format '{{.Status}}' | grep -q "Up"; then
+            log_success "HPB ${hpb_container}: OK"
+        else
+            log_warning "HPB ${hpb_container}: pode não estar pronto"
+        fi
+    done
 
     # Verificar .well-known
     if curl -sSf -o /dev/null -w "%{http_code}" "https://${DOMAIN}/.well-known/caldav" 2>/dev/null | grep -q "301\|302\|308"; then
@@ -576,8 +758,9 @@ EOF
     fi
     echo ""
     echo "URLs de acesso:"
-    echo "  Nextcloud:  https://${DOMAIN}"
-    echo "  Collabora:  https://${COLLABORA_DOMAIN}"
+    echo "  Nextcloud:   https://${DOMAIN}"
+    echo "  Collabora:   https://${COLLABORA_DOMAIN}"
+    echo "  Signaling:   https://${SIGNALING_DOMAIN}"
     echo ""
     echo "Credenciais:"
     echo "  Usuário: admin"
@@ -585,28 +768,31 @@ EOF
     echo ""
     echo "Arquivo de credenciais: $BASE_DIR/$CLIENT_NAME/.credentials"
     echo ""
+    log_info "Containers (10):"
+    echo "  - app (Nextcloud)"
+    echo "  - db (MariaDB 10.11)"
+    echo "  - redis (Redis Alpine)"
+    echo "  - collabora (Collabora Online)"
+    echo "  - turn (TURN/STUN Server, porta ${TURN_PORT})"
+    echo "  - cron (Background Jobs)"
+    echo "  - harp (HaRP - AppAPI)"
+    echo "  - nats (NATS - HPB messaging)"
+    echo "  - janus (Janus Gateway - HPB WebRTC)"
+    echo "  - signaling (Spreed Signaling - HPB)"
+    echo ""
     log_info "Aplicativos instalados:"
     echo "  - Nextcloud Office (Collabora Online)"
     echo "  - Calendar, Contacts, Mail"
     echo "  - Deck, Forms, Notes, Tasks"
     echo "  - Group Folders, Photos, Activity"
-    echo "  - Talk (com TURN/STUN server na porta ${TURN_PORT})"
-    echo "  - AppAPI (com Docker Socket Proxy)"
+    echo "  - Talk (com HPB + TURN/STUN)"
+    echo "  - AppAPI (com HaRP)"
     echo "  - Client Push (notify_push)"
     echo ""
-    log_info "Configurações aplicadas:"
-    echo "  - Redis cache (local + distributed + locking)"
-    echo "  - Background jobs via cron"
-    echo "  - Trusted proxies configurados"
-    echo "  - HTTPS forçado com HSTS"
-    echo "  - Collabora Online configurado e conectado"
-    echo "  - Talk com TURN/STUN server"
-    echo "  - AppAPI com Docker Socket Proxy"
-    echo "  - Client Push (notify_push)"
-    echo "  - .well-known URLs (CalDAV/CardDAV)"
-    echo "  - Índices do banco corrigidos"
-    echo "  - Mimetypes atualizados"
-    echo "  - Logs limpos"
+    log_info "DNS necessários (3 registros A → ${SERVER_IP}):"
+    echo "  - ${DOMAIN}"
+    echo "  - ${COLLABORA_DOMAIN}"
+    echo "  - ${SIGNALING_DOMAIN}"
     echo ""
     log_success "Instância pronta para uso!"
 }
@@ -621,7 +807,7 @@ list_instances() {
     printf "  %-20s %-45s %-12s\n" "-------" "---" "------"
     for dir in "$BASE_DIR"/*/; do
         instance=$(basename "$dir")
-        if [ "$instance" = "traefik" ]; then continue; fi
+        if [ "$instance" = "traefik" ] || [ "$instance" = "backups" ]; then continue; fi
         if [ -f "$BASE_DIR/$instance/.env" ]; then
             source "$BASE_DIR/$instance/.env"
             status=$(docker inspect -f '{{.State.Status}}' "${instance}-app" 2>/dev/null || echo "parado")
@@ -642,7 +828,7 @@ remove_instance() {
     local CLIENT_NAME=$1
 
     if [ -z "$CLIENT_NAME" ]; then
-        log_error "Uso: $0 <nome-cliente> <dominio> remove"
+        log_error "Uso: $0 <nome-cliente> _ remove"
         exit 1
     fi
 
@@ -651,7 +837,6 @@ remove_instance() {
         exit 1
     fi
 
-    # Proteção contra remoção acidental de instâncias em produção
     if [ -f "$BASE_DIR/$CLIENT_NAME/.protected" ]; then
         log_error "Instância $CLIENT_NAME está protegida! Remova o arquivo .protected primeiro."
         exit 1
@@ -663,16 +848,14 @@ remove_instance() {
 
     cd "$BASE_DIR/$CLIENT_NAME"
 
-    # Parar e remover contêineres e volumes
     log_info "Parando e removendo contêineres..."
-    docker compose down -v --remove-orphans 2>/dev/null || true
+    $DC down -v --remove-orphans 2>/dev/null || true
 
-    # Remover contêineres órfãos manualmente
-    for suffix in app db redis collabora cron turn dsp; do
+    # Remover contêineres órfãos manualmente (todos os 10)
+    for suffix in app db redis collabora cron turn harp nats janus signaling; do
         docker rm -f "${CLIENT_NAME}-${suffix}" 2>/dev/null || true
     done
 
-    # Remover diretório
     log_info "Removendo diretório..."
     cd "$BASE_DIR"
     rm -rf "$BASE_DIR/$CLIENT_NAME"
@@ -687,7 +870,7 @@ stop_instance() {
     local CLIENT_NAME=$1
 
     if [ -z "$CLIENT_NAME" ]; then
-        log_error "Uso: $0 <nome-cliente> <dominio> stop"
+        log_error "Uso: $0 <nome-cliente> _ stop"
         exit 1
     fi
 
@@ -698,7 +881,7 @@ stop_instance() {
 
     log_info "Parando instância $CLIENT_NAME..."
     cd "$BASE_DIR/$CLIENT_NAME"
-    docker compose stop
+    $DC stop
     log_success "Instância $CLIENT_NAME parada!"
 }
 
@@ -709,7 +892,7 @@ start_instance() {
     local CLIENT_NAME=$1
 
     if [ -z "$CLIENT_NAME" ]; then
-        log_error "Uso: $0 <nome-cliente> <dominio> start"
+        log_error "Uso: $0 <nome-cliente> _ start"
         exit 1
     fi
 
@@ -720,7 +903,7 @@ start_instance() {
 
     log_info "Iniciando instância $CLIENT_NAME..."
     cd "$BASE_DIR/$CLIENT_NAME"
-    docker compose up -d
+    $DC up -d
     log_success "Instância $CLIENT_NAME iniciada!"
 }
 
@@ -731,7 +914,7 @@ backup_instance() {
     local CLIENT_NAME=$1
 
     if [ -z "$CLIENT_NAME" ]; then
-        log_error "Uso: $0 <nome-cliente> <dominio> backup"
+        log_error "Uso: $0 <nome-cliente> _ backup"
         exit 1
     fi
 
@@ -745,26 +928,20 @@ backup_instance() {
     local BACKUP_FILE="$BACKUP_DIR/${CLIENT_NAME}-backup-$(date +%Y%m%d_%H%M%S).tar.gz"
     log_info "Fazendo backup de $CLIENT_NAME..."
 
-    # Colocar em modo de manutenção
     cd "$BASE_DIR/$CLIENT_NAME"
     docker exec -u www-data "${CLIENT_NAME}-app" php occ maintenance:mode --on 2>/dev/null || true
 
-    # Fazer backup do banco
     log_info "Exportando banco de dados..."
     source "$BASE_DIR/$CLIENT_NAME/.env"
     docker exec "${CLIENT_NAME}-db" mysqldump -u root -p"${MYSQL_ROOT_PASSWORD}" nextcloud > "$BASE_DIR/$CLIENT_NAME/db_backup.sql" 2>/dev/null || true
 
-    # Parar contêineres
-    docker compose stop
+    $DC stop
 
-    # Criar arquivo tar
     log_info "Compactando..."
     tar -czf "$BACKUP_FILE" -C "$BASE_DIR" "$CLIENT_NAME"
 
-    # Reiniciar
-    docker compose up -d
+    $DC up -d
 
-    # Desativar modo de manutenção
     sleep 10
     docker exec -u www-data "${CLIENT_NAME}-app" php occ maintenance:mode --off 2>/dev/null || true
 
@@ -792,8 +969,8 @@ restore_instance() {
     if [ -d "$BASE_DIR/$CLIENT_NAME" ]; then
         log_warning "Instância $CLIENT_NAME já existe. Removendo..."
         cd "$BASE_DIR/$CLIENT_NAME"
-        docker compose down -v --remove-orphans 2>/dev/null || true
-        for suffix in app db redis collabora cron turn dsp; do
+        $DC down -v --remove-orphans 2>/dev/null || true
+        for suffix in app db redis collabora cron turn harp nats janus signaling; do
             docker rm -f "${CLIENT_NAME}-${suffix}" 2>/dev/null || true
         done
         rm -rf "$BASE_DIR/$CLIENT_NAME"
@@ -803,9 +980,8 @@ restore_instance() {
     tar -xzf "$BACKUP_FILE" -C "$BASE_DIR"
 
     cd "$BASE_DIR/$CLIENT_NAME"
-    docker compose up -d
+    $DC up -d
 
-    # Aguardar e importar banco
     sleep 15
     if [ -f "$BASE_DIR/$CLIENT_NAME/db_backup.sql" ]; then
         source "$BASE_DIR/$CLIENT_NAME/.env"
@@ -813,7 +989,6 @@ restore_instance() {
         docker exec -i "${CLIENT_NAME}-db" mysql -u root -p"${MYSQL_ROOT_PASSWORD}" nextcloud < "$BASE_DIR/$CLIENT_NAME/db_backup.sql" 2>/dev/null || true
     fi
 
-    # Desativar modo de manutenção
     sleep 5
     docker exec -u www-data "${CLIENT_NAME}-app" php occ maintenance:mode --off 2>/dev/null || true
 
@@ -827,7 +1002,7 @@ status_instance() {
     local CLIENT_NAME=$1
 
     if [ -z "$CLIENT_NAME" ]; then
-        log_error "Uso: $0 <nome-cliente> <dominio> status"
+        log_error "Uso: $0 <nome-cliente> _ status"
         exit 1
     fi
 
@@ -838,7 +1013,7 @@ status_instance() {
 
     log_info "Status da instância $CLIENT_NAME:"
     echo ""
-    for suffix in app db redis collabora cron turn dsp; do
+    for suffix in app db redis collabora cron turn harp nats janus signaling; do
         container="${CLIENT_NAME}-${suffix}"
         status=$(docker inspect -f '{{.State.Status}}' "$container" 2>/dev/null || echo "não encontrado")
         if [ "$status" = "running" ]; then
@@ -849,24 +1024,42 @@ status_instance() {
     done
     echo ""
 
-    # Verificar URLs
     if [ -f "$BASE_DIR/$CLIENT_NAME/.env" ]; then
         source "$BASE_DIR/$CLIENT_NAME/.env"
         echo "URLs:"
-        echo "  Nextcloud:  https://${DOMAIN}"
-        echo "  Collabora:  https://${COLLABORA_DOMAIN}"
+        echo "  Nextcloud:   https://${DOMAIN}"
+        echo "  Collabora:   https://${COLLABORA_DOMAIN}"
+        echo "  Signaling:   https://${SIGNALING_DOMAIN:-N/A}"
         echo ""
         echo "TURN Server:"
         echo "  Porta: ${TURN_PORT:-3478}"
         echo ""
     fi
 
-    # Verificar se Nextcloud está respondendo
     if docker exec -u www-data "${CLIENT_NAME}-app" php occ status 2>/dev/null | grep -q "installed: true"; then
         log_success "Nextcloud está respondendo normalmente"
     else
         log_warning "Nextcloud pode não estar respondendo"
     fi
+}
+
+# ============================================================
+# CREDENCIAIS INSTÂNCIA
+# ============================================================
+credentials_instance() {
+    local CLIENT_NAME=$1
+
+    if [ -z "$CLIENT_NAME" ]; then
+        log_error "Uso: $0 <nome-cliente> _ credentials"
+        exit 1
+    fi
+
+    if [ ! -f "$BASE_DIR/$CLIENT_NAME/.credentials" ]; then
+        log_error "Arquivo de credenciais não encontrado para $CLIENT_NAME!"
+        exit 1
+    fi
+
+    cat "$BASE_DIR/$CLIENT_NAME/.credentials"
 }
 
 # ============================================================
@@ -888,19 +1081,15 @@ update_instance() {
     log_info "Atualizando instância $CLIENT_NAME..."
     cd "$BASE_DIR/$CLIENT_NAME"
 
-    # Fazer backup antes de atualizar
     log_info "Fazendo backup de segurança..."
     backup_instance "$CLIENT_NAME"
 
-    # Puxar novas imagens
     log_info "Baixando novas imagens..."
-    docker compose pull
+    $DC pull
 
-    # Recriar contêineres
     log_info "Recriando contêineres..."
-    docker compose up -d
+    $DC up -d
 
-    # Aguardar e executar upgrade
     sleep 15
     log_info "Executando upgrade do Nextcloud..."
     docker exec -u www-data "${CLIENT_NAME}-app" php occ upgrade 2>/dev/null || true
@@ -915,30 +1104,41 @@ update_instance() {
 # ============================================================
 if [ $# -eq 0 ]; then
     echo ""
-    echo "  Nextcloud SaaS Manager v9.0"
+    echo "  Nextcloud SaaS Manager v10.0"
     echo "  =============================="
     echo ""
     echo "  Uso: $0 <nome-cliente> <dominio> <comando>"
     echo ""
     echo "  Comandos:"
-    echo "    create   - Criar nova instância"
-    echo "    remove   - Remover instância"
-    echo "    start    - Iniciar instância"
-    echo "    stop     - Parar instância"
-    echo "    status   - Ver status da instância"
-    echo "    backup   - Fazer backup da instância"
-    echo "    restore  - Restaurar instância de backup"
-    echo "    update   - Atualizar instância (pull + upgrade)"
-    echo "    list     - Listar todas as instâncias"
+    echo "    create      - Criar nova instância (10 containers)"
+    echo "    remove      - Remover instância"
+    echo "    start       - Iniciar instância"
+    echo "    stop        - Parar instância"
+    echo "    status      - Ver status da instância"
+    echo "    credentials - Ver credenciais da instância"
+    echo "    backup      - Fazer backup da instância"
+    echo "    restore     - Restaurar instância de backup"
+    echo "    update      - Atualizar instância (pull + upgrade)"
+    echo "    list        - Listar todas as instâncias"
     echo ""
     echo "  Exemplos:"
     echo "    $0 cliente1 nextcloud.cliente1.com.br create"
-    echo "    $0 cliente1 _ remove"
     echo "    $0 cliente1 _ status"
+    echo "    $0 cliente1 _ credentials"
     echo "    $0 cliente1 _ backup"
     echo "    $0 cliente1 /path/to/backup.tar.gz restore"
     echo "    $0 cliente1 _ update"
+    echo "    $0 cliente1 _ remove"
     echo "    $0 list"
+    echo ""
+    echo "  DNS necessários (3 registros A por instância):"
+    echo "    nextcloud.dominio.com.br      → IP do servidor"
+    echo "    collabora-nextcloud.dominio.com.br → IP do servidor"
+    echo "    signaling-nextcloud.dominio.com.br → IP do servidor"
+    echo ""
+    echo "  Containers por instância (10):"
+    echo "    app, db, redis, collabora, turn, cron,"
+    echo "    harp (AppAPI), nats, janus, signaling (HPB)"
     echo ""
     exit 0
 fi
@@ -977,6 +1177,9 @@ case $COMMAND in
         ;;
     status)
         status_instance "$CLIENT_NAME"
+        ;;
+    credentials)
+        credentials_instance "$CLIENT_NAME"
         ;;
     *)
         log_error "Comando desconhecido: $COMMAND"
