@@ -621,9 +621,10 @@ EOF
     # Registrar daemon HaRP
     log_info "  Registrando daemon HaRP..."
     docker exec -u www-data "$APP" php occ app_api:daemon:register \
-        harp_install "HaRP" docker-install https "${CLIENT_NAME}-harp:8780" \
+        harp_install "HaRP" docker-install http "${CLIENT_NAME}-harp:8780" \
         "https://${DOMAIN}" --net="${CLIENT_NAME}_default" \
-        --haproxy_password="${HARP_SHARED_KEY}" --set-default 2>/dev/null || true
+        --harp --harp_frp_address "${CLIENT_NAME}-harp:8782" \
+        --harp_shared_key "${HARP_SHARED_KEY}" --set-default 2>/dev/null || true
     log_success "  AppAPI configurado com HaRP"
 
     # 11. Configurar trusted domains extras
