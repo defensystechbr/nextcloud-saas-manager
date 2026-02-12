@@ -3,7 +3,7 @@
 # Nextcloud SaaS — Deploy de Servidor de Produção
 # Autor: Defensys
 # Data: 2026-02-11
-# Versão: 1.0
+# Versão: 1.1
 # ============================================================
 #
 # Este script prepara um servidor Ubuntu 24.04 (KVM) do zero
@@ -11,7 +11,7 @@
 #   - Docker Engine (repositório oficial)
 #   - Docker Compose (plugin v2)
 #   - Traefik v3.x (latest) como reverse proxy com Let's Encrypt
-#   - manage.sh v9.0 para gerenciamento de instâncias
+#   - manage.sh v10.0 para gerenciamento de instâncias (HPB + HaRP integrados)
 #   - Dependências: pwgen, jq, curl, openssl
 #
 # Uso:
@@ -322,7 +322,7 @@ if [ -f /opt/nextcloud-customers/manage.sh ]; then
     sed -i "s|SERVER_IP=\"[^\"]*\"|SERVER_IP=\"${SERVER_IP}\"|" /opt/nextcloud-customers/manage.sh
 
     # Garantir que usa docker compose (plugin v2)
-    # O manage.sh v9.0 já usa "docker compose" (sem hífen)
+    # O manage.sh v10.0 já usa "docker compose" (sem hífen)
 
     # Permissões e link simbólico
     chmod +x /opt/nextcloud-customers/manage.sh
@@ -354,9 +354,10 @@ echo "  Traefik Logs:      docker logs traefik"
 echo ""
 echo "  Para criar a primeira instância:"
 echo "  ─────────────────────────────────────────"
-echo "  1. Configure os registros DNS:"
-echo "     nextcloud.dominio.com.br      → A → ${SERVER_IP}"
-echo "     collabora-nextcloud.dominio.com.br → A → ${SERVER_IP}"
+echo "  1. Configure 3 registros DNS (tipo A):"
+echo "     nextcloud.dominio.com.br           → ${SERVER_IP}"
+echo "     collabora-nextcloud.dominio.com.br  → ${SERVER_IP}"
+echo "     signaling-nextcloud.dominio.com.br  → ${SERVER_IP}"
 echo ""
 echo "  2. Aguarde a propagação do DNS"
 echo ""
