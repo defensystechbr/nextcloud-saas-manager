@@ -15,6 +15,8 @@
 #   - Containers: 10 por instância (app, db, redis, collabora,
 #     turn, cron, harp, nats, janus, signaling)
 #   - Correção de segurança: Traefik sem porta 8080 exposta
+#   - Fix: HaRP daemon register usa protocolo http e flags corretas
+#   - Fix: Signaling backend usa nome fixo 'backend1' (sem hífens)
 # ============================================================
 
 set -e
@@ -459,9 +461,9 @@ services:
       - nats
       - janus
     environment:
-      - BACKENDS=${CLIENT_NAME}
-      - BACKEND_${CLIENT_UPPER}_URLS=https://\${DOMAIN}
-      - BACKEND_${CLIENT_UPPER}_SHARED_SECRET=\${SIGNALING_SECRET}
+      - BACKENDS=backend1
+      - BACKEND_BACKEND1_URLS=https://\${DOMAIN}
+      - BACKEND_BACKEND1_SHARED_SECRET=\${SIGNALING_SECRET}
       - NATS_URL=nats://nats:4222
       - JANUS_URL=ws://janus:8188
       - HASH_KEY=\${SIGNALING_HASH_KEY}
