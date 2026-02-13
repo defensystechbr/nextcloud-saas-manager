@@ -1,8 +1,23 @@
-# Nextcloud SaaS Manager
+# Nextcloud SaaS Manager v10.0
 
 Este repositório contém um conjunto de scripts para implantar e gerenciar uma plataforma Nextcloud SaaS multi-tenant, utilizando Docker, Traefik como reverse proxy e Let's Encrypt para certificados SSL automáticos.
 
 O objetivo é permitir que qualquer pessoa com um servidor Ubuntu 24.04 (KVM) possa, seguindo este README, ter uma plataforma pronta para hospedar múltiplos clientes Nextcloud de forma segura e isolada.
+
+---
+
+## Changelog
+
+| Versão | Data       | Principais Mudanças |
+|:-------|:-----------|:--------------------|
+| **v10.0** | 2026-02-13 | **Fix Crítico:** Nome do backend do Signaling alterado para `backend1` para evitar bugs com hífens. Adicionado `db:add-missing-indices` na instalação. |
+| **v9.1**  | 2026-02-12 | **Fix:** Corrigido registro do daemon HaRP e flags de inicialização. |
+| **v9.0**  | 2026-02-12 | **Recurso:** Integração completa do HPB (High-Performance Backend) para Talk e HaRP (AppAPI daemon), elevando a arquitetura para 10 containers. |
+| **v8.0**  | 2026-02-11 | **Segurança:** Removida exposição da porta 8080 do Traefik e desabilitado o dashboard inseguro. Acesso via `docker exec`. |
+| **v7.0**  | 2026-02-11 | **Docs:** Correção geral da documentação (`README`, `ADMINISTRATION`, `TROUBLESHOOTING`) com caminhos e comandos corretos. |
+| **v6.0**  | 2026-02-11 | **Docs:** Adicionados guias de Administração e Troubleshooting. |
+| **v5.0**  | 2026-02-11 | **Recurso:** Criação do script `deploy-server.sh` para automação do deploy do servidor. |
+| **v1.0 - v4.0** | 2026-02-10 | Lançamento inicial e refinamentos do `manage.sh` com arquitetura base (Nextcloud, Collabora, TURN). |
 
 ---
 
