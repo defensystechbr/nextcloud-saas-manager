@@ -523,7 +523,7 @@ EOF
 
     # 7. Configurar Talk Recording Server (compartilhado)
     log_info "[7/13] Configurando Talk Recording Server..."
-    echo yes | docker exec -i -u www-data "${APP}-app" php occ config:app:set spreed recording_servers --value="{\"secret\":\"${RECORDING_SECRET}\",\"servers\":[{\"server\":\"http://shared-recording:1234/\",\"verify\":false}]}" --type=string
+    run_occ "$APP" config:app:set spreed recording_servers --value="{\"secret\":\"${RECORDING_SECRET}\",\"servers\":[{\"server\":\"http://shared-recording:1234/\",\"verify\":false}]}"
     log_success "Talk Recording Server configurado"
 
     # 8. Configurar AppAPI com HaRP (por instância)
