@@ -66,11 +66,11 @@ if ! grep -q "Ubuntu" /etc/os-release 2>/dev/null; then
     exit 1
 fi
 
-# Verificar se NÃO é LXC
+# Verificar se NÃO é LXC (aviso, não bloqueio)
 if systemd-detect-virt 2>/dev/null | grep -qi "lxc"; then
-    log_error "Servidor LXC detectado! Use KVM/QEMU para evitar problemas com Docker."
-    log_error "O Docker 29.x+ tem incompatibilidades com /proc/sys em containers LXC."
-    exit 1
+    log_warning "Servidor LXC detectado! KVM/QEMU é recomendado para produção."
+    log_warning "O Docker pode ter limitações com /proc/sys em containers LXC."
+    log_warning "Continuando mesmo assim... Use --force-lxc para suprimir este aviso."
 fi
 
 # Parsear argumentos
