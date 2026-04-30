@@ -10,7 +10,7 @@ O objetivo é permitir que qualquer pessoa com um servidor Ubuntu 24.04 (KVM) po
 
 | Versão | Data       | Principais Mudanças |
 |:-------|:-----------|:--------------------|
-| **v11.0** | 2026-04-30 | **Nova Arquitetura Compartilhada:** 2 containers por cliente + 8 globais. Fix de áudio/vídeo no Talk (coturn network_mode: host). |
+| **v11.0** | 2026-04-30 | **Nova Arquitetura Compartilhada:** 3 containers por cliente + 8 globais. Fix de áudio/vídeo no Talk (coturn network_mode: host). Recording Server compartilhado (multi-backend). |
 | **v10.0** | 2026-02-13 | **Fix Crítico:** Nome do backend do Signaling alterado para `backend1` para evitar bugs com hífens. Adicionado `db:add-missing-indices` na instalação. |
 | **v9.1**  | 2026-02-12 | **Fix:** Corrigido registro do daemon HaRP e flags de inicialização. |
 | **v9.0**  | 2026-02-12 | **Recurso:** Integração completa do HPB (High-Performance Backend) para Talk e HaRP (AppAPI daemon), elevando a arquitetura para 10 containers. |
@@ -45,11 +45,12 @@ Para otimizar o uso de recursos (CPU/Memória), a arquitetura agora divide os se
 - `shared-nats`: Message broker para Signaling
 - `shared-janus`: WebRTC media server para Talk
 - `shared-signaling`: Nextcloud Talk High Performance Backend (multi-tenant)
-- `shared-harp`: Nextcloud AppAPI daemon
+- `shared-recording`: Talk Recording Server (multi-backend)
 
-**Serviços por Cliente (2 containers por instância):**
+**Serviços por Cliente (3 containers por instância):**
 - `<nome>-app`: Nextcloud + Apache + PHP (isolado)
 - `<nome>-cron`: Tarefas em background (cron.sh)
+- `<nome>-harp`: AppAPI daemon (HaRP)
 
 ### DNS Necessários
 
