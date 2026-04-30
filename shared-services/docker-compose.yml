@@ -1,0 +1,137 @@
+name: 'shared-services'
+services:
+  # ============================================================
+  # MariaDB Compartilhado — 1 database por cliente
+  # ============================================================
+  db:
+    image: mariadb:10.11
+    container_name: shared-db
+    restart: always
+    environment:
+      - MYSQL_ROOT_PASSWORD=${DB_ROOT_PASSWORD}
+    volumes:
+      - ./db:/var/lib/mysql
+    command: --transaction-isolation=READ-COMMITTED --log-bin=binlog --binlog-format=ROW --innodb-file-per-table=1 --skip-innodb-read-only-compressed
+    networks:
+      - shared
+
+  # ============================================================
+  # Redis Compartilhado — dbindex separado por cliente
+  # ============================================================
+  redis:
+    image: redis:alpine
+    container_name: shared-redis
+    restart: always
+    command: redis-server --requirepass ${REDIS_PASSWORD}
+    volumes:
+      - ./redis:/data
+    networks:
+      - shared
+
+  # ============================================================
+  # Collabora Online — multi-tenant via aliasgroup
+  # ============================================================
+  collabora:
+    image: collabora/code:latest
+    container_name: shared-collabora
+    restart: always
+    environment:
+      - "aliasgroup1=${COLLABORA_ALLOWLIST}"
+      - username=admin
+      - password=${COLLABORA_ADMIN_PASSWORD}
+      - "extra_params=--o:ssl.enable=false --o:ssl.termination=true --o:net.frame_ancestors=${COLLABORA_ALLOWLIST}"
+      - server_name=${COLLABORA_DOMAIN}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.shared-collabora.rule=Host(`${COLLABORA_DOMAIN}`)"
+      - "traefik.http.routers.shared-collabora.entrypoints=websecure"
+      - "traefik.http.routers.shared-collabora.tls=true"
+      - "traefik.http.routers.shared-collabora.tls.certresolver=letsencrypt"
+      - "traefik.http.services.shared-collabora.loadbalancer.server.port=9980"
+      - "traefik.docker.network=proxy"
+    networks:
+      - shared
+      - proxy
+
+  # ============================================================
+  # coturn (TURN/STUN) — network_mode: host para WebRTC
+  # ============================================================
+  turn:
+    image: coturn/coturn:latest
+    container_name: shared-turn
+    restart: always
+    network_mode: host
+    volumes:
+      - ./turnserver.conf:/etc/coturn/turnserver.conf:ro
+
+  # ============================================================
+  # NATS — Message broker para signaling
+  # ============================================================
+  nats:
+    image: nats:2.10
+    container_name: shared-nats
+    restart: always
+    volumes:
+      - ./hpb/nats.conf:/config/nats.conf:ro
+    command: ["-c", "/config/nats.conf"]
+    networks:
+      - shared
+
+  # ============================================================
+  # Janus Gateway — WebRTC media server
+  # ============================================================
+  janus:
+    image: canyan/janus-gateway:latest
+    container_name: shared-janus
+    restart: always
+    command: ["janus", "--full-trickle"]
+    volumes:
+      - ./hpb/janus.jcfg:/usr/etc/janus/janus.jcfg:ro
+      - ./hpb/janus.transport.websockets.jcfg:/usr/etc/janus/janus.transport.websockets.jcfg:ro
+      - ./hpb/janus.plugin.videoroom.jcfg:/usr/etc/janus/janus.plugin.videoroom.jcfg:ro
+    networks:
+      - shared
+
+  # ============================================================
+  # Spreed Signaling Server — HPB multi-tenant
+  # ============================================================
+  signaling:
+    image: strukturag/nextcloud-spreed-signaling:latest
+    container_name: shared-signaling
+    restart: always
+    depends_on:
+      - nats
+      - janus
+    volumes:
+      - ./hpb/signaling.conf:/config/server.conf:ro
+    environment:
+      - CONFIG=/config/server.conf
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.shared-signaling.rule=Host(`${SIGNALING_DOMAIN}`)"
+      - "traefik.http.routers.shared-signaling.entrypoints=websecure"
+      - "traefik.http.routers.shared-signaling.tls=true"
+      - "traefik.http.routers.shared-signaling.tls.certresolver=letsencrypt"
+      - "traefik.http.services.shared-signaling.loadbalancer.server.port=8080"
+      - "traefik.docker.network=proxy"
+    networks:
+      - shared
+      - proxy
+
+  # ============================================================
+  # HaRP — AppAPI daemon compartilhado
+  # ============================================================
+  harp:
+    image: ghcr.io/nextcloud/nextcloud-appapi-harp:release
+    container_name: shared-harp
+    restart: always
+    volumes:
+      - ./harp-certs:/certs
+    networks:
+      - shared
+
+networks:
+  shared:
+    name: shared
+  proxy:
+    external: true

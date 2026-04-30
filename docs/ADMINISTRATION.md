@@ -8,7 +8,7 @@ Este documento detalha todos os procedimentos de administração de instâncias 
 
 | Item | Valor |
 |---|---|
-| Script | `/opt/nextcloud-customers/manage.sh` (v10.0) |
+| Script | `/opt/nextcloud-customers/manage.sh` (v11.0) |
 | Link simbólico | `/usr/local/bin/nextcloud-manage` |
 | Diretório das instâncias | `/opt/nextcloud-customers/<nome-cliente>/` |
 | Diretório de backups | `/opt/nextcloud-customers/backups/` |
@@ -31,25 +31,21 @@ O segundo argumento é o domínio do Nextcloud para os comandos `create` e `rest
 
 ### 1. Configurar DNS (OBRIGATÓRIO)
 
-Antes de criar a instância, configure **3 registros DNS do tipo A** no provedor DNS do cliente:
+Antes de criar a instância, configure **1 registro DNS do tipo A** no provedor DNS do cliente:
 
 | Registro | Exemplo | Aponta para |
 |---|---|---|
 | Domínio Nextcloud | `nextcloud.acme.com.br` | IP do servidor |
-| Domínio Collabora | `collabora-nextcloud.acme.com.br` | IP do servidor |
-| Domínio Signaling | `signaling-nextcloud.acme.com.br` | IP do servidor |
 
-Os domínios do Collabora e Signaling são gerados automaticamente pelo script adicionando os prefixos `collabora-` e `signaling-` ao domínio do Nextcloud.
+Os domínios do Collabora e Signaling agora são fixos e compartilhados (`collabora-01...` e `signaling-01...`).
 
 Verifique a propagação do DNS antes de prosseguir:
 
 ```bash
 dig +short nextcloud.acme.com.br
-dig +short collabora-nextcloud.acme.com.br
-dig +short signaling-nextcloud.acme.com.br
 ```
 
-Todos devem retornar o IP do servidor.
+Deve retornar o IP do servidor.
 
 ### 2. Criar a Instância
 
@@ -58,13 +54,13 @@ sudo nextcloud-manage acme nextcloud.acme.com.br create
 ```
 
 O script irá:
-1. Verificar se os 3 registros DNS estão resolvendo.
-2. Gerar senhas e chaves para todos os serviços.
-3. Criar configurações HPB (Janus, NATS, Signaling).
+1. Verificar se o registro DNS está resolvendo.
+2. Gerar senhas e alocar recursos nos serviços compartilhados (MariaDB, Redis).
+3. Atualizar configurações HPB e Collabora globais.
 4. Criar `docker-compose.yml`, `.env` e `.credentials` em `/opt/nextcloud-customers/acme/`.
-5. Subir os **10 containers**.
+5. Subir os **2 containers** da instância (`app` e `cron`).
 6. Aguardar o Nextcloud inicializar.
-7. Configurar Collabora, Talk (TURN + HPB), Redis, HaRP (AppAPI), Client Push e demais apps.
+7. Configurar integração com os serviços compartilhados (Collabora, Talk HPB, Redis, TURN, HaRP).
 8. Exibir as credenciais completas.
 
 ### 3. Verificar a Instância
@@ -73,7 +69,7 @@ O script irá:
 sudo nextcloud-manage acme _ status
 ```
 
-Este comando mostra o status de todos os **10 containers**, as URLs de acesso (Nextcloud, Collabora, Signaling) e verifica se o Nextcloud está respondendo.
+Este comando mostra o status dos containers do cliente, as URLs de acesso e verifica se o Nextcloud está respondendo.
 
 ### 4. Consultar Credenciais
 
@@ -133,7 +129,7 @@ sudo nextcloud-manage acme _ start
 sudo nextcloud-manage acme _ backup
 ```
 
-O backup é salvo em `/opt/nextcloud-customers/backups/` com o nome `acme-backup-YYYYMMDD_HHMMSS.tar.gz`. Inclui todos os dados do Nextcloud, configurações HPB, e um dump completo do banco de dados.
+O backup é salvo em `/opt/nextcloud-customers/backups/` com o nome `acme-backup-YYYYMMDD_HHMMSS.tar.gz`. Inclui todos os dados do Nextcloud, certificados HaRP, e um dump completo do banco de dados a partir do MariaDB compartilhado.
 
 ### Restaurar de um Backup
 
@@ -203,14 +199,14 @@ docker exec -u www-data acme-app php occ app_api:daemon:list
 
 ## Acesso ao Banco de Dados
 
-Para acessar o banco de dados MariaDB de uma instância:
+Para acessar o banco de dados MariaDB de uma instância (agora no container compartilhado):
 
 ```bash
 # Consultar a senha no .env
-sudo grep MYSQL_ROOT_PASSWORD /opt/nextcloud-customers/acme/.env
+sudo grep MYSQL_PASSWORD /opt/nextcloud-customers/acme/.env
 
-# Acessar o banco
-docker exec -it acme-db mysql -u root -p nextcloud
+# Acessar o banco via container compartilhado
+docker exec -it shared-db mariadb -u nextcloud_acme -p
 ```
 
 ---
@@ -234,22 +230,16 @@ Os certificados são armazenados em `/opt/traefik/acme.json` e renovados automat
 
 ---
 
-## Estrutura de Arquivos por Instância
+## Estrutura de Arquivos por Instância (v11.0)
 
 ```
 /opt/nextcloud-customers/acme/
-├── docker-compose.yml          # Definição dos 10 containers
+├── docker-compose.yml          # Definição dos containers do cliente (app, cron, harp)
 ├── .env                        # Variáveis de ambiente (senhas, domínios, chaves)
 ├── .credentials                # Credenciais em formato legível
 ├── install.log                 # Log da instalação inicial
 ├── app/                        # Dados do Nextcloud (/var/www/html)
-├── db/                         # Dados do MariaDB
-├── redis/                      # Dados do Redis
-├── harp-certs/                 # Certificados do HaRP (AppAPI)
-└── hpb/                        # Configurações do HPB (Talk)
-    └── config/
-        ├── gnatsd.conf                         # NATS
-        ├── janus.jcfg                          # Janus Gateway
-        ├── janus.transport.websockets.jcfg     # Janus WebSocket
-        └── janus.plugin.videoroom.jcfg         # Janus VideoRoom
+└── harp-certs/                 # Certificados do HaRP (AppAPI)
 ```
+
+*(Nota: Os dados do banco de dados, redis, e configurações HPB agora residem no diretório `/opt/shared-services/`)*
