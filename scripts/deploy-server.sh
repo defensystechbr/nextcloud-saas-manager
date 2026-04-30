@@ -677,7 +677,7 @@ volumes:
 
 networks:
   shared:
-    name: shared
+    external: true
   proxy:
     external: true
 COMPOSE_EOF
