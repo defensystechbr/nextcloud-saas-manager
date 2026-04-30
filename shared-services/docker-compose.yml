@@ -119,16 +119,25 @@ services:
       - proxy
 
   # ============================================================
-  # HaRP — AppAPI daemon compartilhado
+  # Talk Recording Server — multi-backend via recording.conf
   # ============================================================
-  harp:
-    image: ghcr.io/nextcloud/nextcloud-appapi-harp:release
-    container_name: shared-harp
+  recording:
+    image: ghcr.io/nextcloud-releases/aio-talk-recording:latest
+    container_name: shared-recording
     restart: always
+    init: true
+    shm_size: '2gb'
+    entrypoint: ["python", "-m", "nextcloud.talk.recording", "--config", "/conf/recording.conf"]
     volumes:
-      - ./harp-certs:/certs
+      - ./recording/recording.conf:/conf/recording.conf:ro
+      - recording-tmp:/tmp
+    depends_on:
+      - signaling
     networks:
       - shared
+
+volumes:
+  recording-tmp:
 
 networks:
   shared:

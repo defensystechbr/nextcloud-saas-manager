@@ -5,13 +5,13 @@
 # Autor: Defensys
 # ============================================================
 # Arquitetura v11.0 (Compartilhada):
-#   - 8 containers globais (db, redis, collabora, turn, nats, janus, signaling, harp)
-#   - 2 containers por cliente (app, cron)
+#   - 8 containers globais (db, redis, collabora, turn, nats, janus, signaling, recording)
+#   - 3 containers por cliente (app, cron, harp)
 #   - 1 registro DNS por cliente (apenas o domínio do Nextcloud)
 #   - Domínios fixos: collabora-01.defensys.seg.br, signaling-01.defensys.seg.br
 # ============================================================
 
-set -euo pipefail
+set -uo pipefail
 
 # ============================================================
 # CONFIGURAÇÃO GLOBAL
@@ -187,6 +187,76 @@ EOF
     cd "$SHARED_DIR"
     $DC restart signaling
     log_success "Signaling backends atualizado (${count} backends)"
+}
+
+update_recording_backends() {
+    log_info "Atualizando Recording Server backends..."
+    source "$SHARED_DIR/.env"
+
+    local backend_list=""
+    local backend_sections=""
+    local count=0
+
+    for env_file in "$BASE_DIR"/*/.env; do
+        if [ -f "$env_file" ]; then
+            local domain=$(grep "^DOMAIN=" "$env_file" 2>/dev/null | cut -d= -f2)
+            if [ -n "$domain" ]; then
+                count=$((count + 1))
+                local bname="backend-${count}"
+                if [ -n "$backend_list" ]; then
+                    backend_list="${backend_list}, ${bname}"
+                else
+                    backend_list="${bname}"
+                fi
+                backend_sections="${backend_sections}
+[${bname}]
+url = https://${domain}
+secret = ${RECORDING_SECRET}
+skipverify = false
+"
+            fi
+        fi
+    done
+
+    # Reescrever recording/recording.conf (formato imagem oficial)
+    cat > "$SHARED_DIR/recording/recording.conf" << EOF
+[logs]
+level = 30
+
+[http]
+listen = 0.0.0.0:1234
+
+[backend]
+allowall = false
+secret = ${RECORDING_SECRET}
+backends = ${backend_list}
+skipverify = false
+maxmessagesize = 1024
+videowidth = 1920
+videoheight = 1080
+directory = /tmp
+${backend_sections}
+[signaling]
+signalings = signaling-1
+
+[signaling-1]
+url = ws://shared-signaling:8080
+internalsecret = ${SIGNALING_INTERNAL_SECRET}
+
+[ffmpeg]
+extensionaudio = .ogg
+extensionvideo = .webm
+
+[recording]
+browser = firefox
+driverPath = /usr/bin/geckodriver
+browserPath = /usr/bin/firefox
+EOF
+
+    # Reiniciar recording
+    cd "$SHARED_DIR"
+    $DC restart recording 2>/dev/null || true
+    log_success "Recording backends atualizado (${count} backends)"
 }
 
 # ============================================================
@@ -382,6 +452,21 @@ EOF
     log_info "Iniciando pós-instalação..."
     log_info "============================================"
 
+    # Verificar conectividade à internet (necessário para baixar apps)
+    log_info "Verificando conectividade à internet..."
+    local retries=0
+    while ! docker exec "$APP" bash -c "curl -sf --max-time 5 https://apps.nextcloud.com > /dev/null 2>&1" && [ $retries -lt 30 ]; do
+        retries=$((retries + 1))
+        log_warning "Sem conectividade... tentativa $retries/30"
+        sleep 5
+    done
+    if [ $retries -ge 30 ]; then
+        log_error "Container sem acesso à internet! Verifique NAT/MASQUERADE."
+        log_error "Execute: iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE"
+        return 1
+    fi
+    log_success "Conectividade OK"
+
     # 1. Configurar Redis com dbindex separado
     log_info "[1/12] Configurando Redis..."
     run_occ "$APP" config:system:set redis host --value="shared-redis"
@@ -406,7 +491,12 @@ EOF
     log_info "[3/12] Instalando aplicativos..."
     local APPS="richdocuments calendar contacts mail deck forms notes tasks groupfolders photos activity spreed app_api notify_push"
     for app in $APPS; do
-        run_occ "$APP" app:install "$app" 2>/dev/null || true
+        local install_attempts=0
+        while ! run_occ "$APP" app:install "$app" 2>/dev/null && [ $install_attempts -lt 3 ]; do
+            install_attempts=$((install_attempts + 1))
+            log_warning "Retry instalação $app ($install_attempts/3)..."
+            sleep 5
+        done
         run_occ "$APP" app:enable "$app" 2>/dev/null || true
     done
     log_success "Aplicativos instalados"
@@ -427,12 +517,17 @@ EOF
     log_success "Talk TURN/STUN configurado"
 
     # 6. Configurar Talk HPB (Signaling compartilhado)
-    log_info "[6/12] Configurando Talk HPB (Signaling)..."
-    run_occ "$APP" config:app:set spreed signaling_servers --value="{\"servers\":[{\"server\":\"https://${SIGNALING_DOMAIN}/standalone-signaling/\",\"verify\":true}],\"secret\":\"${SIGNALING_SECRET}\"}"
+    log_info "[6/13] Configurando Talk HPB (Signaling)..."
+    run_occ "$APP" config:app:set spreed signaling_servers --value="{\"servers\":[{\"server\":\"https://${SIGNALING_DOMAIN}/\",\"verify\":true}],\"secret\":\"${SIGNALING_SECRET}\"}"
     log_success "Talk HPB configurado → https://${SIGNALING_DOMAIN}"
 
-    # 7. Configurar AppAPI com HaRP (por instância)
-    log_info "[7/12] Configurando AppAPI com HaRP..."
+    # 7. Configurar Talk Recording Server (compartilhado)
+    log_info "[7/13] Configurando Talk Recording Server..."
+    echo yes | docker exec -i -u www-data "${APP}-app" php occ config:app:set spreed recording_servers --value="{\"secret\":\"${RECORDING_SECRET}\",\"servers\":[{\"server\":\"http://shared-recording:1234/\",\"verify\":false}]}" --type=string
+    log_success "Talk Recording Server configurado"
+
+    # 8. Configurar AppAPI com HaRP (por instância)
+    log_info "[8/13] Configurando AppAPI com HaRP..."
     run_occ "$APP" app_api:daemon:register \
         harp_install "HaRP" docker-install http "${CLIENT_NAME}-harp:8780" \
         "https://${DOMAIN}" --net="shared" \
@@ -440,30 +535,30 @@ EOF
         --harp_shared_key "${HARP_SHARED_KEY}" --set-default 2>/dev/null || true
     log_success "AppAPI + HaRP configurado"
 
-    # 8. Configurar trusted domains
-    log_info "[8/12] Configurando trusted domains..."
+    # 9. Configurar trusted domains
+    log_info "[9/13] Configurando trusted domains..."
     run_occ "$APP" config:system:set trusted_domains 0 --value="${DOMAIN}"
 
-    # 9. Configurar notify_push (Client Push)
-    log_info "[9/12] Configurando Client Push..."
+    # 10. Configurar notify_push (Client Push)
+    log_info "[10/13] Configurando Client Push..."
     run_occ "$APP" config:app:set notify_push base_endpoint --value="https://${DOMAIN}/push" 2>/dev/null || true
 
-    # 10. Corrigir índices
-    log_info "[10/12] Corrigindo índices do banco..."
+    # 11. Corrigir índices
+    log_info "[11/13] Corrigindo índices do banco..."
     run_occ "$APP" db:add-missing-indices
     run_occ "$APP" db:add-missing-columns 2>/dev/null || true
     run_occ "$APP" db:add-missing-primary-keys 2>/dev/null || true
 
-    # 11. Configurações finais
-    log_info "[11/12] Configurações finais..."
+    # 12. Configurações finais
+    log_info "[12/13] Configurações finais..."
     run_occ "$APP" background:cron
     run_occ "$APP" config:system:set htaccess.RewriteBase --value='/'
     run_occ "$APP" maintenance:update:htaccess 2>/dev/null || true
     docker exec "$APP" bash -c 'truncate -s 0 /var/www/html/data/nextcloud.log' 2>/dev/null || true
     run_occ "$APP" log:manage --level=warning
 
-    # 12. Reparo final
-    log_info "[12/12] Reparo final..."
+    # 13. Reparo final
+    log_info "[13/13] Reparo final..."
     run_occ "$APP" maintenance:repair 2>/dev/null || true
 
     # ============================================================
@@ -472,6 +567,7 @@ EOF
     log_info "Atualizando serviços compartilhados..."
     update_collabora_allowlist
     update_signaling_backends
+    update_recording_backends
 
     # ============================================================
     # VERIFICAÇÃO FINAL
@@ -639,6 +735,7 @@ cmd_restore() {
     # Atualizar serviços compartilhados
     update_collabora_allowlist
     update_signaling_backends
+    update_recording_backends
 
     log_success "Instância '$CLIENT_NAME' restaurada com sucesso!"
 }
@@ -735,6 +832,7 @@ cmd_remove() {
     # Atualizar serviços compartilhados
     update_collabora_allowlist
     update_signaling_backends
+    update_recording_backends
 
     log_success "Instância '$CLIENT_NAME' removida completamente!"
 }

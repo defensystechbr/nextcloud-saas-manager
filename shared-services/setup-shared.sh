@@ -61,7 +61,7 @@ log_info "============================================"
 # CRIAR ESTRUTURA DE DIRETÓRIOS
 # ============================================================
 log_info "Criando estrutura de diretórios..."
-mkdir -p "$SHARED_DIR"/{db,redis,harp-certs,hpb}
+mkdir -p "$SHARED_DIR"/{db,redis,hpb,recording}
 
 # ============================================================
 # GERAR CREDENCIAIS (se não existirem)
@@ -77,6 +77,7 @@ if [ ! -f "$SHARED_DIR/.env" ]; then
     SIGNALING_BLOCK_KEY=$(openssl rand -hex 16)  # MUST be 16 bytes (32 hex chars)
     SIGNALING_INTERNAL_SECRET=$(generate_secret)
     HARP_SHARED_KEY=$(generate_password)
+    RECORDING_SECRET=$(generate_secret)
 
     cat > "$SHARED_DIR/.env" << EOF
 # Nextcloud SaaS — Shared Services Configuration
@@ -111,6 +112,9 @@ SIGNALING_INTERNAL_SECRET=${SIGNALING_INTERNAL_SECRET}
 
 # HaRP (AppAPI)
 HARP_SHARED_KEY=${HARP_SHARED_KEY}
+
+# Recording Server
+RECORDING_SECRET=${RECORDING_SECRET}
 EOF
     chmod 600 "$SHARED_DIR/.env"
     log_success "Credenciais geradas em $SHARED_DIR/.env"
@@ -258,11 +262,12 @@ EOF
 log_success "signaling.conf criado"
 
 # ============================================================
-# COPIAR DOCKER-COMPOSE
+# COPIAR DOCKER-COMPOSE E RECORDING SERVER
 # ============================================================
-log_info "Instalando docker-compose.yml..."
-if [ -f "$(dirname "$0")/docker-compose.yml" ]; then
-    cp "$(dirname "$0")/docker-compose.yml" "$SHARED_DIR/docker-compose.yml"
+log_info "Instalando docker-compose.yml e Recording Server..."
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+if [ -f "$SCRIPT_DIR/docker-compose.yml" ]; then
+    cp "$SCRIPT_DIR/docker-compose.yml" "$SHARED_DIR/docker-compose.yml"
 elif [ -f "/tmp/shared-services-compose.yml" ]; then
     cp "/tmp/shared-services-compose.yml" "$SHARED_DIR/docker-compose.yml"
 else
@@ -270,7 +275,35 @@ else
     log_error "Copie para $SHARED_DIR/docker-compose.yml manualmente."
     exit 1
 fi
+
+# Copiar Dockerfile e server.conf do Recording Server
+if [ -d "$SCRIPT_DIR/recording" ]; then
+    cp -r "$SCRIPT_DIR/recording" "$SHARED_DIR/recording"
+    log_success "Recording Server files copiados"
+else
+    log_warning "Diretório recording/ não encontrado. Recording Server não será construído."
+fi
 log_success "docker-compose.yml instalado"
+
+# ============================================================
+# CONFIGURAR NAT/MASQUERADE (containers precisam de internet)
+# ============================================================
+log_info "Verificando NAT/MASQUERADE para acesso à internet dos containers..."
+DEFAULT_IFACE=$(ip route | grep default | awk '{print $5}' | head -1)
+if [ -n "$DEFAULT_IFACE" ]; then
+    if ! iptables -t nat -C POSTROUTING -o "$DEFAULT_IFACE" -j MASQUERADE 2>/dev/null; then
+        iptables -t nat -A POSTROUTING -o "$DEFAULT_IFACE" -j MASQUERADE
+        log_success "Regra NAT/MASQUERADE adicionada (interface: $DEFAULT_IFACE)"
+    else
+        log_info "NAT/MASQUERADE já configurado"
+    fi
+    # Persistir regras
+    if command -v netfilter-persistent &>/dev/null; then
+        netfilter-persistent save 2>/dev/null || true
+    fi
+else
+    log_warning "Interface de rede padrão não encontrada. Verifique NAT manualmente."
+fi
 
 # ============================================================
 # CRIAR REDE DOCKER 'shared'
@@ -303,7 +336,7 @@ done
 # Verificar todos os serviços
 log_info "Verificando serviços..."
 echo ""
-SERVICES=("shared-db" "shared-redis" "shared-collabora" "shared-turn" "shared-nats" "shared-janus" "shared-signaling" "shared-harp")
+SERVICES=("shared-db" "shared-redis" "shared-collabora" "shared-turn" "shared-nats" "shared-janus" "shared-signaling" "shared-recording")
 ALL_OK=true
 for svc in "${SERVICES[@]}"; do
     if docker ps --format '{{.Names}}' | grep -q "^${svc}$"; then
@@ -325,7 +358,7 @@ if [ "$ALL_OK" = true ]; then
     echo "  TURN:       turn:${SERVER_IP}:3478"
     echo "  MariaDB:    shared-db:3306"
     echo "  Redis:      shared-redis:6379"
-    echo "  HaRP:       shared-harp:8780"
+    echo "  Recording:  shared-recording:1234"
     echo ""
     echo "  Credenciais: $SHARED_DIR/.env"
     echo ""
