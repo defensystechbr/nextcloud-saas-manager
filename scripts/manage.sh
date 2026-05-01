@@ -1,10 +1,10 @@
 #!/bin/bash
 # ============================================================
-# Nextcloud SaaS Manager v11.2
+# Nextcloud SaaS Manager v11.3
 # Script para gerenciar instâncias Nextcloud com serviços compartilhados
 # Autor: Defensys
 # ============================================================
-# Arquitetura v11.2 (Compartilhada):
+# Arquitetura v11.3 (Compartilhada):
 #   - 8 containers globais (db, redis, collabora, turn, nats, janus, signaling, recording)
 #   - 3 containers por cliente (app, cron, harp)
 #   - 1 registro DNS por cliente (apenas o domínio do Nextcloud)
@@ -114,7 +114,7 @@ update_collabora_allowlist() {
         # Atualizar .env dos shared-services
         sed -i "s|^COLLABORA_ALLOWLIST=.*|COLLABORA_ALLOWLIST=${domains}|" "$SHARED_DIR/.env"
         # Reiniciar Collabora para aplicar
-        cd "$SHARED_DIR"
+        cd "$SHARED_DIR" || exit 1
         $DC up -d collabora
         log_success "Collabora allowlist atualizado: $domains"
     fi
@@ -195,7 +195,7 @@ servers = turn:${TURN_DOMAIN}:3478?transport=udp,turn:${TURN_DOMAIN}:3478?transp
 EOF
 
     # Reiniciar signaling
-    cd "$SHARED_DIR"
+    cd "$SHARED_DIR" || exit 1
     $DC restart signaling
     log_success "Signaling backends atualizado (${count} backends)"
 }
@@ -240,8 +240,8 @@ skipverify = false
 "
     fi
 
-    # Reescrever recording/recording.conf (formato imagem oficial)
-    cat > "$SHARED_DIR/recording/recording.conf" << EOF
+    # Reescrever recording/server.conf (formato imagem oficial)
+    cat > "$SHARED_DIR/recording/server.conf" << EOF
 [logs]
 level = 30
 
@@ -259,10 +259,18 @@ videoheight = 1080
 directory = /tmp
 ${backend_sections}
 [signaling]
-signalings = signaling1
+# Duas seções: a interna (rede docker shared) é usada para WebSocket;
+# a externa (HTTPS público) é a URL que o Nextcloud envia ao bot quando ele
+# precisa entrar na chamada como participante. Sem a [signaling2], o bot
+# falha com "No configured signaling secret for https://...".
+signalings = signaling1, signaling2
 
 [signaling1]
 url = ws://shared-signaling:8080
+internalsecret = ${SIGNALING_INTERNAL_SECRET}
+
+[signaling2]
+url = https://${SIGNALING_DOMAIN}
 internalsecret = ${SIGNALING_INTERNAL_SECRET}
 
 [ffmpeg]
@@ -276,7 +284,7 @@ browserPath = /usr/bin/firefox
 EOF
 
     # Reiniciar recording
-    cd "$SHARED_DIR"
+    cd "$SHARED_DIR" || exit 1
     $DC restart recording 2>/dev/null || true
     log_success "Recording backends atualizado (${count} backends)"
 }
@@ -460,7 +468,7 @@ EOF
     # INICIAR CONTÊINERES
     # ============================================================
     log_info "Iniciando contêineres (app + cron)..."
-    cd "$BASE_DIR/$CLIENT_NAME"
+    cd "$BASE_DIR/$CLIENT_NAME" || exit 1
     $DC up -d 2>&1
 
     # Aguardar Nextcloud ficar instalado
@@ -703,7 +711,7 @@ cmd_backup() {
 
     # Compactar tudo
     log_info "Compactando..."
-    cd "$BASE_DIR"
+    cd "$BASE_DIR" || exit 1
     tar -czf "$BACKUP_FILE" "$CLIENT_NAME/"
     rm -f "$BASE_DIR/$CLIENT_NAME/database.sql"
 
@@ -728,7 +736,7 @@ cmd_restore() {
     log_info "Restaurando '$CLIENT_NAME' de $BACKUP_FILE..."
 
     # Extrair backup
-    cd "$BASE_DIR"
+    cd "$BASE_DIR" || exit 1
     tar -xzf "$BACKUP_FILE"
 
     # Carregar variáveis do cliente
@@ -751,7 +759,7 @@ cmd_restore() {
     fi
 
     # Subir containers
-    cd "$BASE_DIR/$CLIENT_NAME"
+    cd "$BASE_DIR/$CLIENT_NAME" || exit 1
     $DC up -d
 
     # Atualizar serviços compartilhados
@@ -768,7 +776,7 @@ cmd_restore() {
 cmd_stop() {
     local CLIENT_NAME="$1"
     log_info "Parando instância '$CLIENT_NAME'..."
-    cd "$BASE_DIR/$CLIENT_NAME"
+    cd "$BASE_DIR/$CLIENT_NAME" || exit 1
     $DC stop
     log_success "Instância parada"
 }
@@ -779,7 +787,7 @@ cmd_stop() {
 cmd_start() {
     local CLIENT_NAME="$1"
     log_info "Iniciando instância '$CLIENT_NAME'..."
-    cd "$BASE_DIR/$CLIENT_NAME"
+    cd "$BASE_DIR/$CLIENT_NAME" || exit 1
     $DC up -d
     log_success "Instância iniciada"
 }
@@ -794,7 +802,7 @@ cmd_update() {
     # Backup primeiro
     cmd_backup "$CLIENT_NAME"
 
-    cd "$BASE_DIR/$CLIENT_NAME"
+    cd "$BASE_DIR/$CLIENT_NAME" || exit 1
     $DC pull
     $DC up -d
 
@@ -836,7 +844,7 @@ cmd_remove() {
 
     # Parar e remover containers
     log_info "Removendo containers..."
-    cd "$BASE_DIR/$CLIENT_NAME"
+    cd "$BASE_DIR/$CLIENT_NAME" || { log_error "Diretório do cliente não encontrado"; exit 1; }
     $DC down -v 2>/dev/null || true
 
     # Remover database
@@ -847,9 +855,13 @@ cmd_remove() {
         FLUSH PRIVILEGES;
     " 2>/dev/null || true
 
-    # Remover diretório
+    # Remover diretório (com proteção contra variáveis vazias)
     log_info "Removendo arquivos..."
-    rm -rf "$BASE_DIR/$CLIENT_NAME"
+    if [ -z "${BASE_DIR:-}" ] || [ -z "${CLIENT_NAME:-}" ]; then
+        log_error "BASE_DIR ou CLIENT_NAME vazios; abortando rm para evitar dano."
+        exit 1
+    fi
+    rm -rf "${BASE_DIR:?BASE_DIR não definido}/${CLIENT_NAME:?CLIENT_NAME não definido}"
 
     # Atualizar serviços compartilhados
     update_collabora_allowlist

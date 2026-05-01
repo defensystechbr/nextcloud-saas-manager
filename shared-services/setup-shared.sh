@@ -78,6 +78,8 @@ if [ ! -f "$SHARED_DIR/.env" ]; then
     SIGNALING_INTERNAL_SECRET=$(generate_secret)
     HARP_SHARED_KEY=$(generate_password)
     RECORDING_SECRET=$(generate_secret)
+    JANUS_ADMIN_SECRET=$(generate_secret)
+    JANUS_ROOM_KEY=$(generate_secret)
 
     cat > "$SHARED_DIR/.env" << EOF
 # Nextcloud SaaS — Shared Services Configuration
@@ -115,6 +117,10 @@ HARP_SHARED_KEY=${HARP_SHARED_KEY}
 
 # Recording Server
 RECORDING_SECRET=${RECORDING_SECRET}
+
+# Janus (WebRTC media server)
+JANUS_ADMIN_SECRET=${JANUS_ADMIN_SECRET}
+JANUS_ROOM_KEY=${JANUS_ROOM_KEY}
 EOF
     chmod 600 "$SHARED_DIR/.env"
     log_success "Credenciais geradas em $SHARED_DIR/.env"
@@ -176,7 +182,7 @@ general: {
     events_folder = "/usr/lib/janus/events"
     debug_level = 4
     log_to_stdout = true
-    admin_secret = "janusoverlord"
+    admin_secret = "${JANUS_ADMIN_SECRET}"
 }
 
 nat: {
@@ -219,7 +225,7 @@ EOF
 
 cat > "$SHARED_DIR/hpb/janus.plugin.videoroom.jcfg" << EOF
 general: {
-    admin_key = "supersecret"
+    admin_key = "${JANUS_ROOM_KEY}"
 }
 EOF
 log_success "Janus configurado"
@@ -250,8 +256,14 @@ type = janus
 url = ws://shared-janus:8188
 
 [backend]
-backends = 
+# Defesa: nunca emitir 'backends = ' vazio (causa crash do parser do signaling).
+# O manage.sh substitui esta seção quando o primeiro cliente é criado.
+backends = backend1
 allowall = false
+secret = ${SIGNALING_SECRET}
+
+[backend1]
+url = https://placeholder.invalid
 secret = ${SIGNALING_SECRET}
 
 [turn]
@@ -279,7 +291,15 @@ fi
 # Copiar Dockerfile e server.conf do Recording Server
 if [ -d "$SCRIPT_DIR/recording" ]; then
     cp -r "$SCRIPT_DIR/recording" "$SHARED_DIR/recording"
-    log_success "Recording Server files copiados"
+    # Substituir placeholders no template inicial (será reescrito pelo manage.sh
+    # ao criar o primeiro cliente, mas precisa ser válido para o boot inicial).
+    sed -i \
+        -e "s|RECORDING_SECRET_PLACEHOLDER|${RECORDING_SECRET}|g" \
+        -e "s|SIGNALING_INTERNAL_SECRET_PLACEHOLDER|${SIGNALING_INTERNAL_SECRET}|g" \
+        -e "s|SIGNALING_DOMAIN_PLACEHOLDER|${SIGNALING_DOMAIN}|g" \
+        -e "s|CUSTOMER_DOMAIN_PLACEHOLDER|placeholder.invalid|g" \
+        "$SHARED_DIR/recording/server.conf"
+    log_success "Recording Server files copiados (placeholders substituídos)"
 else
     log_warning "Diretório recording/ não encontrado. Recording Server não será construído."
 fi
