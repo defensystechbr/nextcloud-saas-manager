@@ -8,7 +8,7 @@ Este documento detalha todos os procedimentos de administração de instâncias 
 
 | Item | Valor |
 |---|---|
-| Script | `/opt/nextcloud-customers/manage.sh` (v11.2) |
+| Script | `/opt/nextcloud-customers/manage.sh` (v11.3) |
 | Link simbólico | `/usr/local/bin/nextcloud-manage` |
 | Diretório das instâncias | `/opt/nextcloud-customers/<nome-cliente>/` |
 | Diretório de backups | `/opt/nextcloud-customers/backups/` |
@@ -58,7 +58,7 @@ O script irá:
 2. Gerar senhas e alocar recursos nos serviços compartilhados (MariaDB, Redis).
 3. Atualizar configurações HPB e Collabora globais.
 4. Criar `docker-compose.yml`, `.env` e `.credentials` em `/opt/nextcloud-customers/acme/`.
-5. Subir os **2 containers** da instância (`app` e `cron`).
+5. Subir os **3 containers** da instância (`app`, `cron` e `harp`).
 6. Aguardar o Nextcloud inicializar.
 7. Configurar integração com os serviços compartilhados (Collabora, Talk HPB, Redis, TURN, HaRP).
 8. Exibir as credenciais completas.
@@ -230,7 +230,7 @@ Os certificados são armazenados em `/opt/traefik/acme.json` e renovados automat
 
 ---
 
-## Estrutura de Arquivos por Instância (v11.2)
+## Estrutura de Arquivos por Instância (v11.3)
 
 ```
 /opt/nextcloud-customers/acme/
