@@ -33,7 +33,7 @@ O objetivo é permitir que qualquer pessoa com um servidor Ubuntu 24.04 (KVM) po
 | **Isolamento** | Arquitetura híbrida: **2 containers por cliente + 8 serviços compartilhados globais** |
 | **Rede** | Rede Docker `proxy` (Traefik) e `shared` (Serviços Compartilhados) |
 
-### Arquitetura Compartilhada (v11.0)
+### Arquitetura Compartilhada (introduzida na v11.0)
 
 Para otimizar o uso de recursos (CPU/Memória), a arquitetura agora divide os serviços em globais e específicos por cliente.
 
@@ -81,14 +81,14 @@ Após o deploy, o servidor terá a seguinte estrutura:
 │       ├── traefik.log
 │       └── access.log
 │
-├── shared-services/                  # Serviços Compartilhados (v11.0)
+├── shared-services/                  # Serviços Compartilhados (introduzido na v11.0)
 │   ├── docker-compose.yml            # Compose dos serviços globais
 │   ├── .env                          # Credenciais compartilhadas
 │   ├── setup-shared.sh               # Script de inicialização
 │   └── ...                           # Configurações (coturn, janus, etc)
 │
 └── nextcloud-customers/              # Diretório principal da plataforma
-    ├── manage.sh                     # Script de gerenciamento (v11.0)
+    ├── manage.sh                     # Script de gerenciamento (v11.1)
     ├── backups/                      # Backups de todas as instâncias
     ├── <nome-cliente-1>/             # Instância do cliente 1
     │   ├── docker-compose.yml        # Compose da instância (app + cron)

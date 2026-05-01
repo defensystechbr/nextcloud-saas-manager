@@ -1,10 +1,10 @@
 #!/bin/bash
 # ============================================================
-# Nextcloud SaaS Manager v11.0
+# Nextcloud SaaS Manager v11.1
 # Script para gerenciar instâncias Nextcloud com serviços compartilhados
 # Autor: Defensys
 # ============================================================
-# Arquitetura v11.0 (Compartilhada):
+# Arquitetura v11.1 (Compartilhada):
 #   - 8 containers globais (db, redis, collabora, turn, nats, janus, signaling, recording)
 #   - 3 containers por cliente (app, cron, harp)
 #   - 1 registro DNS por cliente (apenas o domínio do Nextcloud)
@@ -901,7 +901,7 @@ cmd_shared_status() {
 # ============================================================
 usage() {
     echo ""
-    echo "Nextcloud SaaS Manager v11.0 (Arquitetura Compartilhada)"
+    echo "Nextcloud SaaS Manager v11.1 (Arquitetura Compartilhada)"
     echo ""
     echo "Uso:"
     echo "  $(basename "$0") <cliente> <domínio> create     Criar nova instância"

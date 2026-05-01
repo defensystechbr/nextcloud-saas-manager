@@ -8,7 +8,7 @@ Este documento detalha todos os procedimentos de administração de instâncias 
 
 | Item | Valor |
 |---|---|
-| Script | `/opt/nextcloud-customers/manage.sh` (v11.0) |
+| Script | `/opt/nextcloud-customers/manage.sh` (v11.1) |
 | Link simbólico | `/usr/local/bin/nextcloud-manage` |
 | Diretório das instâncias | `/opt/nextcloud-customers/<nome-cliente>/` |
 | Diretório de backups | `/opt/nextcloud-customers/backups/` |
@@ -230,7 +230,7 @@ Os certificados são armazenados em `/opt/traefik/acme.json` e renovados automat
 
 ---
 
-## Estrutura de Arquivos por Instância (v11.0)
+## Estrutura de Arquivos por Instância (v11.1)
 
 ```
 /opt/nextcloud-customers/acme/
