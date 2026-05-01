@@ -377,6 +377,8 @@ if [ ! -f "$SHARED_DIR/.env" ]; then
     SIGNALING_INTERNAL_SECRET=$(generate_secret)
     HARP_SHARED_KEY=$(generate_password)
     RECORDING_SECRET=$(generate_secret)
+    JANUS_ADMIN_SECRET=$(generate_secret)
+    JANUS_ROOM_KEY=$(generate_secret)
 
     cat > "$SHARED_DIR/.env" << EOF
 # Nextcloud SaaS — Shared Services Configuration
@@ -414,6 +416,10 @@ HARP_SHARED_KEY=${HARP_SHARED_KEY}
 
 # Recording Server
 RECORDING_SECRET=${RECORDING_SECRET}
+
+# Janus (WebRTC media server)
+JANUS_ADMIN_SECRET=${JANUS_ADMIN_SECRET}
+JANUS_ROOM_KEY=${JANUS_ROOM_KEY}
 EOF
     chmod 600 "$SHARED_DIR/.env"
     log_success "Credenciais geradas em $SHARED_DIR/.env"
@@ -460,7 +466,7 @@ general: {
     events_folder = "/usr/lib/janus/events"
     debug_level = 4
     log_to_stdout = true
-    admin_secret = "janusoverlord"
+    admin_secret = "${JANUS_ADMIN_SECRET}"
 }
 
 nat: {
@@ -503,7 +509,7 @@ EOF
 
 cat > "$SHARED_DIR/hpb/janus.plugin.videoroom.jcfg" << EOF
 general: {
-    admin_key = "supersecret"
+    admin_key = "${JANUS_ROOM_KEY}"
 }
 EOF
 
