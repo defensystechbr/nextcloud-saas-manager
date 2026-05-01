@@ -78,6 +78,7 @@ ACME_EMAIL=""
 SERVER_IP=""
 COLLABORA_DOMAIN=""
 SIGNALING_DOMAIN=""
+TURN_DOMAIN=""
 MANAGE_URL=""
 
 while [[ $# -gt 0 ]]; do
@@ -98,6 +99,10 @@ while [[ $# -gt 0 ]]; do
             SIGNALING_DOMAIN="$2"
             shift 2
             ;;
+        --turn-domain)
+            TURN_DOMAIN="$2"
+            shift 2
+            ;;
         --manage-url)
             MANAGE_URL="$2"
             shift 2
@@ -108,6 +113,7 @@ while [[ $# -gt 0 ]]; do
             echo "Uso: sudo $0 --email admin@dominio.com \\"
             echo "     --collabora-domain collabora-01.dominio.com \\"
             echo "     --signaling-domain signaling-01.dominio.com \\"
+            echo "     --turn-domain turn-01.dominio.com \\"
             echo "     [--ip IP_DO_SERVIDOR] [--manage-url URL_DO_MANAGE_SH]"
             exit 1
             ;;
@@ -420,9 +426,10 @@ source "$SHARED_DIR/.env"
 cat > "$SHARED_DIR/turnserver.conf" << EOF
 listening-port=3478
 fingerprint
+lt-cred-mech
 use-auth-secret
 static-auth-secret=${TURN_SECRET}
-realm=${SERVER_IP}
+realm=${TURN_DOMAIN:-$SERVER_IP}
 total-quota=100
 bps-capacity=0
 stale-nonce=600
@@ -435,6 +442,8 @@ max-port=65535
 log-file=stdout
 new-log-timestamp
 external-ip=${SERVER_IP}
+listening-ip=0.0.0.0
+no-cli
 EOF
 
 # Configurar NATS
@@ -528,24 +537,42 @@ secret = ${SIGNALING_SECRET}
 [turn]
 apikey = static
 secret = ${TURN_SECRET}
-servers = turn:${SERVER_IP}:3478?transport=udp,turn:${SERVER_IP}:3478?transport=tcp
+servers = turn:${TURN_DOMAIN:-$SERVER_IP}:3478?transport=udp,turn:${TURN_DOMAIN:-$SERVER_IP}:3478?transport=tcp
 EOF
 
-# Configurar Recording Server
+# Configurar Recording Server (template mínimo válido; sera reescrito por update_recording_backends)
 cat > "$SHARED_DIR/recording/recording.conf" << EOF
-[app]
-debug = false
+[logs]
+level = 30
 
-[signaling]
-internalsecret = ${SIGNALING_INTERNAL_SECRET}
+[http]
+listen = 0.0.0.0:1234
 
 [backend]
-backends = 
-allowall = false
+allowall = true
 secret = ${RECORDING_SECRET}
+backends = 
+skipverify = false
+maxmessagesize = 1024
+videowidth = 1920
+videoheight = 1080
+directory = /tmp
+
+[signaling]
+signalings = signaling1
+
+[signaling1]
+url = ws://shared-signaling:8080
+internalsecret = ${SIGNALING_INTERNAL_SECRET}
+
+[ffmpeg]
+extensionaudio = .ogg
+extensionvideo = .webm
 
 [recording]
-tempdir = /tmp
+browser = firefox
+driverPath = /usr/bin/geckodriver
+browserPath = /usr/bin/firefox
 EOF
 
 # Criar docker-compose.yml dos serviços compartilhados
@@ -733,8 +760,11 @@ else
 fi
 
 if [ -f /opt/nextcloud-customers/manage.sh ]; then
-    # Atualizar SERVER_IP no manage.sh
+    # Atualizar SERVER_IP/TURN_DOMAIN no manage.sh
     sed -i "s|SERVER_IP=\"[^\"]*\"|SERVER_IP=\"${SERVER_IP}\"|" /opt/nextcloud-customers/manage.sh
+    if [ -n "$TURN_DOMAIN" ]; then
+        sed -i "s|TURN_DOMAIN=\"[^\"]*\"|TURN_DOMAIN=\"${TURN_DOMAIN}\"|" /opt/nextcloud-customers/manage.sh
+    fi
 
     # Permissões e link simbólico
     chmod +x /opt/nextcloud-customers/manage.sh

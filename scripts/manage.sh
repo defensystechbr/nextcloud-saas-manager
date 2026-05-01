@@ -203,7 +203,7 @@ update_recording_backends() {
             local domain=$(grep "^DOMAIN=" "$env_file" 2>/dev/null | cut -d= -f2)
             if [ -n "$domain" ]; then
                 count=$((count + 1))
-                local bname="backend-${count}"
+                local bname="backend${count}"
                 if [ -n "$backend_list" ]; then
                     backend_list="${backend_list}, ${bname}"
                 else
@@ -238,9 +238,9 @@ videoheight = 1080
 directory = /tmp
 ${backend_sections}
 [signaling]
-signalings = signaling-1
+signalings = signaling1
 
-[signaling-1]
+[signaling1]
 url = ws://shared-signaling:8080
 internalsecret = ${SIGNALING_INTERNAL_SECRET}
 
