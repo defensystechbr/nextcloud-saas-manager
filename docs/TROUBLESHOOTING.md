@@ -27,7 +27,7 @@ Os domínios compartilhados do Collabora, Signaling e TURN também devem resolve
 ```bash
 dig +short collabora-01.defensys.seg.br
 dig +short signaling-01.defensys.seg.br
-dig +short turn-01.defensys.seg.br   # introduzido na v11.1
+dig +short turn-01.defensys.seg.br   # introduzido na v11.2
 ```
 
 ### 2. Porta 80 bloqueada
@@ -193,7 +193,7 @@ docker exec -u www-data acme-app php occ config:app:get spreed turn_servers
 docker exec -u www-data acme-app php occ config:app:get spreed stun_servers
 ```
 
-**Bug conhecido (corrigido na v11.1):** se a saída mostrar a URL com prefixo duplicado, por exemplo `"server":"turn:turn-01.defensys.seg.br:3478"`, isso impede a coleta de candidatos ICE. O valor correto não contém o esquema `turn:` no campo `server` (o front-end o concatena automaticamente). Para reaplicar manualmente em uma instância legada:
+**Bug conhecido (corrigido na v11.2):** se a saída mostrar a URL com prefixo duplicado, por exemplo `"server":"turn:turn-01.defensys.seg.br:3478"`, isso impede a coleta de candidatos ICE. O valor correto não contém o esquema `turn:` no campo `server` (o front-end o concatena automaticamente). Para reaplicar manualmente em uma instância legada:
 
 ```bash
 TURN_SECRET=$(grep '^TURN_SECRET=' /opt/shared-services/.env | cut -d= -f2)
@@ -236,7 +236,7 @@ cat /opt/shared-services/hpb/signaling.conf
 
 ### 6. Verificar o Recording Server (`shared-recording`)
 
-**Bug conhecido (corrigido na v11.1):** o template inicial do `recording.conf` continha `backends = ` vazio (ou `backends = backend-1` com hífen), provocando `KeyError: ''` em loop no boot do container. Sintoma típico nos logs:
+**Bug conhecido (corrigido na v11.2):** o template inicial do `recording.conf` continha `backends = ` vazio (ou `backends = backend-1` com hífen), provocando `KeyError: ''` em loop no boot do container. Sintoma típico nos logs:
 
 ```
 File "/usr/lib/python3/dist-packages/configparser.py", line 720, in get

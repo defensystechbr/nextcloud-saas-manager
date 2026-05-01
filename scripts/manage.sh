@@ -1,10 +1,10 @@
 #!/bin/bash
 # ============================================================
-# Nextcloud SaaS Manager v11.1
+# Nextcloud SaaS Manager v11.2
 # Script para gerenciar instâncias Nextcloud com serviços compartilhados
 # Autor: Defensys
 # ============================================================
-# Arquitetura v11.1 (Compartilhada):
+# Arquitetura v11.2 (Compartilhada):
 #   - 8 containers globais (db, redis, collabora, turn, nats, janus, signaling, recording)
 #   - 3 containers por cliente (app, cron, harp)
 #   - 1 registro DNS por cliente (apenas o domínio do Nextcloud)
@@ -151,6 +151,16 @@ secret = ${SIGNALING_SECRET}
         fi
     done
 
+    # Defesa: nunca emitir 'backends = ' vazio (causa crash do parser)
+    if [ -z "$backend_list" ]; then
+        backend_list="backend1"
+        backend_sections="
+[backend1]
+url = https://placeholder.invalid
+secret = ${SIGNALING_SECRET}
+"
+    fi
+
     # Reescrever signaling.conf
     cat > "$SHARED_DIR/hpb/signaling.conf" << EOF
 [http]
@@ -218,6 +228,17 @@ skipverify = false
             fi
         fi
     done
+
+    # Defesa: nunca emitir 'backends = ' vazio (causa KeyError: '' no nc-talk-recording)
+    if [ -z "$backend_list" ]; then
+        backend_list="backend1"
+        backend_sections="
+[backend1]
+url = https://placeholder.invalid
+secret = ${RECORDING_SECRET}
+skipverify = false
+"
+    fi
 
     # Reescrever recording/recording.conf (formato imagem oficial)
     cat > "$SHARED_DIR/recording/recording.conf" << EOF
@@ -901,7 +922,7 @@ cmd_shared_status() {
 # ============================================================
 usage() {
     echo ""
-    echo "Nextcloud SaaS Manager v11.1 (Arquitetura Compartilhada)"
+    echo "Nextcloud SaaS Manager v11.2 (Arquitetura Compartilhada)"
     echo ""
     echo "Uso:"
     echo "  $(basename "$0") <cliente> <domínio> create     Criar nova instância"

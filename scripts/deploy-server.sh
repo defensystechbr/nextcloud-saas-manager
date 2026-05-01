@@ -3,7 +3,7 @@
 # Nextcloud SaaS — Deploy de Servidor de Produção
 # Autor: Defensys
 # Data: 2026-04-30
-# Versão: 2.0 (Arquitetura v11.1 — Serviços Compartilhados)
+# Versão: 2.0 (Arquitetura v11.2 — Serviços Compartilhados)
 # ============================================================
 #
 # Este script prepara um servidor Ubuntu 24.04 (KVM) do zero
@@ -13,7 +13,7 @@
 #   - Traefik v3.x (latest) como reverse proxy com Let's Encrypt
 #   - Serviços Compartilhados (MariaDB, Redis, Collabora, coturn,
 #     NATS, Janus, Signaling, Recording)
-#   - manage.sh v11.1 para gerenciamento de instâncias
+#   - manage.sh v11.2 para gerenciamento de instâncias
 #   - Dependências: pwgen, jq, curl, openssl
 #
 # Uso:
@@ -150,7 +150,7 @@ fi
 echo ""
 echo "============================================"
 echo "  Nextcloud SaaS — Deploy de Servidor v2.0"
-echo "  Arquitetura v11.1 (Serviços Compartilhados)"
+echo "  Arquitetura v11.2 (Serviços Compartilhados)"
 echo "============================================"
 echo ""
 echo "  E-mail ACME:       $ACME_EMAIL"
@@ -530,8 +530,13 @@ type = janus
 url = ws://shared-janus:8188
 
 [backend]
-backends = 
+# bootstrap: backend1 placeholder reescrito por manage.sh::update_signaling_backends
+backends = backend1
 allowall = false
+secret = ${SIGNALING_SECRET}
+
+[backend1]
+url = https://placeholder.invalid
 secret = ${SIGNALING_SECRET}
 
 [turn]
@@ -551,12 +556,20 @@ listen = 0.0.0.0:1234
 [backend]
 allowall = true
 secret = ${RECORDING_SECRET}
-backends = 
+# bootstrap: backend1 é um placeholder válido (URL dummy) que será
+# reescrito automaticamente em manage.sh::update_recording_backends quando
+# a primeira instância de cliente for criada. Manter um backend declarado
+# evita o crash KeyError: '' do nc-talk-recording v0.x quando 'backends' está vazio.
+backends = backend1
 skipverify = false
 maxmessagesize = 1024
 videowidth = 1920
 videoheight = 1080
 directory = /tmp
+
+[backend1]
+url = https://placeholder.invalid
+secret = ${RECORDING_SECRET}
 
 [signaling]
 signalings = signaling1
@@ -746,9 +759,9 @@ else
 fi
 
 # ============================================================
-# ETAPA 6: INSTALAR MANAGE.SH v11.1
+# ETAPA 6: INSTALAR MANAGE.SH v11.2
 # ============================================================
-log_info "Etapa 6/7: Instalando manage.sh v11.1..."
+log_info "Etapa 6/7: Instalando manage.sh v11.2..."
 
 if [ -n "$MANAGE_URL" ]; then
     curl -sSL "$MANAGE_URL" -o /opt/nextcloud-customers/manage.sh
@@ -770,7 +783,7 @@ if [ -f /opt/nextcloud-customers/manage.sh ]; then
     chmod +x /opt/nextcloud-customers/manage.sh
     ln -sf /opt/nextcloud-customers/manage.sh /usr/local/bin/nextcloud-manage
 
-    log_success "manage.sh v11.1 instalado: nextcloud-manage"
+    log_success "manage.sh v11.2 instalado: nextcloud-manage"
 fi
 
 # ============================================================

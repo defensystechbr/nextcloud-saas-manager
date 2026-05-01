@@ -1,4 +1,4 @@
-# Nextcloud SaaS Manager v11.1
+# Nextcloud SaaS Manager v11.2
 
 Este repositório contém um conjunto de scripts para implantar e gerenciar uma plataforma Nextcloud SaaS multi-tenant, utilizando Docker, Traefik como reverse proxy e Let's Encrypt para certificados SSL automáticos.
 
@@ -9,6 +9,7 @@ O objetivo é permitir que qualquer pessoa com um servidor Ubuntu 24.04 (KVM) po
 ### Changelog
 | Versão | Data       | Principais Mudanças |
 |:-------|:-----------|:--------------------|
+| **v11.2** | 2026-05-01 | **Fix de bootstrap do Recording:** o template inicial gerado por `deploy-server.sh` para `recording.conf` (e também `signaling.conf`) tinha `backends = ` vazio, provocando `KeyError: ''` em loop no container `shared-recording` antes da criação da primeira instância. Agora o template traz um placeholder `backend1 → https://placeholder.invalid`, e as funções `update_*_backends` no `manage.sh` aplicam o mesmo fallback ao remover a última instância. README inclui o `chmod +x` obrigatório antes do `sudo bash deploy-server.sh`. |
 | **v11.1** | 2026-05-01 | **Fixes Críticos do Talk:** (1) URL do TURN agora usa hostname `turn-01.defensys.seg.br` sem prefixo duplicado `turn:turn:`; (2) `recording_servers` aplicado via `run_occ` em vez de `echo yes \| docker exec` (eliminando erro `--update-only`); (3) template `recording.conf` reescrito com `backend1`/`signaling1` (sem hífen) eliminando `KeyError: ''` no boot; (4) nova variável `TURN_DOMAIN` no `manage.sh` e `deploy-server.sh` com flag CLI `--turn-domain`; (5) coturn ganha `lt-cred-mech` e `realm` por hostname. Validado por chamada Talk real entre 2 navegadores (1m46s). |
 | **v11.0** | 2026-04-30 | **Nova Arquitetura Compartilhada:** 3 containers por cliente + 8 globais. Fix de áudio/vídeo no Talk (coturn network_mode: host). Recording Server compartilhado (multi-backend). |
 | **v10.0** | 2026-02-13 | **Fix Crítico:** Nome do backend do Signaling alterado para `backend1` para evitar bugs com hífens. Adicionado `db:add-missing-indices` na instalação. |
@@ -130,7 +131,10 @@ Conecte-se ao novo servidor via SSH e clone este repositório:
 ssh usuario@IP_DO_SERVIDOR
 git clone https://github.com/defensystechbr/nextcloud-saas-manager.git
 cd nextcloud-saas-manager
+chmod +x scripts/*.sh
 ```
+
+> **Importante:** o `git clone` não preserva o bit de execução; o `chmod +x` é obrigatório antes de chamar os scripts.
 
 ### Passo 2: Executar o Script de Deploy
 
@@ -152,7 +156,12 @@ sudo ./scripts/deploy-server.sh --email seu-email@dominio.com
 Opcionalmente, pode forçar o IP do servidor (útil se a detecção automática falhar):
 
 ```bash
-sudo ./scripts/deploy-server.sh --email seu-email@dominio.com --ip 200.50.151.10 --turn-domain turn-01.defensys.seg.br
+sudo bash scripts/deploy-server.sh \
+    --email seu-email@dominio.com \
+    --ip 200.50.151.10 \
+    --turn-domain turn-01.defensys.seg.br \
+    --collabora-domain collabora-01.defensys.seg.br \
+    --signaling-domain signaling-01.defensys.seg.br
 ```
 
 Ao final, o script exibirá um resumo com todas as informações do servidor. O servidor agora está pronto para receber clientes.
