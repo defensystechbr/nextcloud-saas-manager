@@ -763,12 +763,23 @@ fi
 # ============================================================
 log_info "Etapa 6/7: Instalando manage.sh v11.2..."
 
+# Auto-descobrir o manage.sh: prioriza --manage-url, depois /tmp/manage.sh,
+# depois o arquivo ao lado deste deploy-server.sh (caso normal de clone do repo).
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LOCAL_MANAGE="${SCRIPT_DIR}/manage.sh"
+
 if [ -n "$MANAGE_URL" ]; then
+    log_info "Baixando manage.sh de ${MANAGE_URL}..."
     curl -sSL "$MANAGE_URL" -o /opt/nextcloud-customers/manage.sh
+elif [ -f "$LOCAL_MANAGE" ]; then
+    log_info "Usando manage.sh do clone: ${LOCAL_MANAGE}"
+    cp "$LOCAL_MANAGE" /opt/nextcloud-customers/manage.sh
 elif [ -f /tmp/manage.sh ]; then
+    log_info "Usando manage.sh em /tmp/manage.sh"
     cp /tmp/manage.sh /opt/nextcloud-customers/manage.sh
 else
-    log_warning "manage.sh não fornecido. Copie manualmente para /opt/nextcloud-customers/manage.sh"
+    log_warning "manage.sh não encontrado em ${LOCAL_MANAGE} nem em /tmp/manage.sh."
+    log_warning "Copie manualmente para /opt/nextcloud-customers/manage.sh"
     log_warning "Use: scp manage.sh user@${SERVER_IP}:/opt/nextcloud-customers/manage.sh"
 fi
 

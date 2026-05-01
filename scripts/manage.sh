@@ -650,7 +650,7 @@ cmd_status() {
 
     echo ""
     echo "--- Serviços Compartilhados ---"
-    for container in shared-db shared-redis shared-collabora shared-turn shared-nats shared-janus shared-signaling shared-harp; do
+    for container in shared-db shared-redis shared-collabora shared-turn shared-nats shared-janus shared-signaling shared-recording; do
         local status=$(docker inspect -f '{{.State.Status}}' "$container" 2>/dev/null || echo "not found")
         if [ "$status" = "running" ]; then
             echo -e "  ${GREEN}●${NC} $container: $status"
@@ -883,7 +883,7 @@ cmd_list() {
     # Mostrar serviços compartilhados
     echo "=== Serviços Compartilhados ==="
     echo ""
-    for container in shared-db shared-redis shared-collabora shared-turn shared-nats shared-janus shared-signaling shared-harp; do
+    for container in shared-db shared-redis shared-collabora shared-turn shared-nats shared-janus shared-signaling shared-recording; do
         local status=$(docker inspect -f '{{.State.Status}}' "$container" 2>/dev/null || echo "not found")
         if [ "$status" = "running" ]; then
             echo -e "  ${GREEN}●${NC} $container"
@@ -901,7 +901,7 @@ cmd_shared_status() {
     echo ""
     echo "=== Serviços Compartilhados ==="
     echo ""
-    for container in shared-db shared-redis shared-collabora shared-turn shared-nats shared-janus shared-signaling shared-harp; do
+    for container in shared-db shared-redis shared-collabora shared-turn shared-nats shared-janus shared-signaling shared-recording; do
         local status=$(docker inspect -f '{{.State.Status}}' "$container" 2>/dev/null || echo "not found")
         local uptime=$(docker inspect -f '{{.State.StartedAt}}' "$container" 2>/dev/null | cut -dT -f1)
         if [ "$status" = "running" ]; then
