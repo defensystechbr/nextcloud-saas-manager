@@ -23,10 +23,11 @@ dig +short nextcloud.acme.com.br
 
 Deve retornar o IP do servidor. Se não retornar, aguarde a propagação ou corrija o registro DNS.
 
-Os domínios compartilhados do Collabora e Signaling também devem resolver:
+Os domínios compartilhados do Collabora, Signaling e TURN também devem resolver:
 ```bash
 dig +short collabora-01.defensys.seg.br
 dig +short signaling-01.defensys.seg.br
+dig +short turn-01.defensys.seg.br   # introduzido na v11.1
 ```
 
 ### 2. Porta 80 bloqueada
@@ -192,6 +193,16 @@ docker exec -u www-data acme-app php occ config:app:get spreed turn_servers
 docker exec -u www-data acme-app php occ config:app:get spreed stun_servers
 ```
 
+**Bug conhecido (corrigido na v11.1):** se a saída mostrar a URL com prefixo duplicado, por exemplo `"server":"turn:turn-01.defensys.seg.br:3478"`, isso impede a coleta de candidatos ICE. O valor correto não contém o esquema `turn:` no campo `server` (o front-end o concatena automaticamente). Para reaplicar manualmente em uma instância legada:
+
+```bash
+TURN_SECRET=$(grep '^TURN_SECRET=' /opt/shared-services/.env | cut -d= -f2)
+docker exec -u www-data acme-app php occ config:app:set spreed turn_servers \
+  --value="[{\"server\":\"turn-01.defensys.seg.br:3478\",\"secret\":\"${TURN_SECRET}\",\"protocols\":\"udp,tcp\"}]"
+docker exec -u www-data acme-app php occ config:app:set spreed stun_servers \
+  --value="[\"turn-01.defensys.seg.br:3478\"]"
+```
+
 ### 4. Verificar o HPB Compartilhado (Signaling Server)
 
 O HPB é composto por 3 containers compartilhados: NATS, Janus e Signaling.
@@ -222,6 +233,50 @@ O Signaling compartilhado gerencia múltiplos backends. Verifique se a instânci
 ```bash
 cat /opt/shared-services/hpb/signaling.conf
 ```
+
+### 6. Verificar o Recording Server (`shared-recording`)
+
+**Bug conhecido (corrigido na v11.1):** o template inicial do `recording.conf` continha `backends = ` vazio (ou `backends = backend-1` com hífen), provocando `KeyError: ''` em loop no boot do container. Sintoma típico nos logs:
+
+```
+File "/usr/lib/python3/dist-packages/configparser.py", line 720, in get
+    return self._unify_values(section, vars)[option]
+KeyError: ''
+```
+
+**Diagnóstico e correção em instância legada:**
+
+```bash
+# Logs do recording
+docker logs shared-recording --tail 50
+
+# Ver a configuração atual
+cat /opt/shared-services/recording/recording.conf | grep -E 'backends|signalings|^\['
+
+# Garantir nomes sem hífen e backend válido (subseqüentemente regravado pelo manage.sh)
+sudo sed -i 's/backends = backend-1/backends = backend1/; s/^\[backend-1\]/[backend1]/; \
+  s/signalings = signaling-1/signalings = signaling1/; s/^\[signaling-1\]/[signaling1]/' \
+  /opt/shared-services/recording/recording.conf
+
+# Recriar o container limpando state
+cd /opt/shared-services && docker compose up -d --force-recreate shared-recording
+
+# Verificar saúde
+curl -s http://127.0.0.1:1234/api/v1/welcome
+# Esperado: {"version":"0.2.1"}
+```
+
+Ao aplicar essas mudanças, atualize também a configuração do app Talk via `manage.sh` (helper `run_occ`):
+
+```bash
+RECORDING_SECRET=$(grep '^RECORDING_SECRET=' /opt/shared-services/.env | cut -d= -f2)
+docker exec -u www-data acme-app php occ config:app:set spreed recording_servers \
+  --value="{\"secret\":\"${RECORDING_SECRET}\",\"servers\":[{\"server\":\"http://shared-recording:1234/\",\"verify\":false}]}"
+```
+
+### 7. Browser "not fully supported by Nextcloud Talk"
+
+O Nextcloud Talk valida o `User-Agent` e bloqueia avisos para Chromium muito recentes (≥ 145). O banner é apenas informativo e não impede chamadas. Para suprimí-lo, atualize a allow-list interna do Spreed ou use Firefox/Chrome estável.
 
 ---
 

@@ -1,4 +1,4 @@
-# Nextcloud SaaS Manager v11.0
+# Nextcloud SaaS Manager v11.1
 
 Este repositório contém um conjunto de scripts para implantar e gerenciar uma plataforma Nextcloud SaaS multi-tenant, utilizando Docker, Traefik como reverse proxy e Let's Encrypt para certificados SSL automáticos.
 
@@ -6,10 +6,10 @@ O objetivo é permitir que qualquer pessoa com um servidor Ubuntu 24.04 (KVM) po
 
 ---
 
-## Changelog
-
+### Changelog
 | Versão | Data       | Principais Mudanças |
 |:-------|:-----------|:--------------------|
+| **v11.1** | 2026-05-01 | **Fixes Críticos do Talk:** (1) URL do TURN agora usa hostname `turn-01.defensys.seg.br` sem prefixo duplicado `turn:turn:`; (2) `recording_servers` aplicado via `run_occ` em vez de `echo yes \| docker exec` (eliminando erro `--update-only`); (3) template `recording.conf` reescrito com `backend1`/`signaling1` (sem hífen) eliminando `KeyError: ''` no boot; (4) nova variável `TURN_DOMAIN` no `manage.sh` e `deploy-server.sh` com flag CLI `--turn-domain`; (5) coturn ganha `lt-cred-mech` e `realm` por hostname. Validado por chamada Talk real entre 2 navegadores (1m46s). |
 | **v11.0** | 2026-04-30 | **Nova Arquitetura Compartilhada:** 3 containers por cliente + 8 globais. Fix de áudio/vídeo no Talk (coturn network_mode: host). Recording Server compartilhado (multi-backend). |
 | **v10.0** | 2026-02-13 | **Fix Crítico:** Nome do backend do Signaling alterado para `backend1` para evitar bugs com hífens. Adicionado `db:add-missing-indices` na instalação. |
 | **v9.1**  | 2026-02-12 | **Fix:** Corrigido registro do daemon HaRP e flags de inicialização. |
@@ -29,7 +29,7 @@ O objetivo é permitir que qualquer pessoa com um servidor Ubuntu 24.04 (KVM) po
 | **Servidor Host** | Ubuntu 24.04 LTS (KVM recomendado, **não** LXC) |
 | **Orquestração** | Docker Engine 29.x + Docker Compose plugin v2 |
 | **Reverse Proxy** | Traefik v3.x+ (latest) com Let's Encrypt automático |
-| **Gerenciamento** | `manage.sh` v11.0 (script para CRUD de instâncias) |
+| **Gerenciamento** | `manage.sh` v11.1 (script para CRUD de instâncias) |
 | **Isolamento** | Arquitetura híbrida: **2 containers por cliente + 8 serviços compartilhados globais** |
 | **Rede** | Rede Docker `proxy` (Traefik) e `shared` (Serviços Compartilhados) |
 
@@ -55,8 +55,9 @@ Para otimizar o uso de recursos (CPU/Memória), a arquitetura agora divide os se
 ### DNS Necessários
 
 **Domínios Fixos (Globais):**
-- `collabora-01.defensys.seg.br` (Collabora)
-- `signaling-01.defensys.seg.br` (Signaling)
+- `collabora-01.defensys.seg.br` (Collabora Online)
+- `signaling-01.defensys.seg.br` (Talk High Performance Backend)
+- `turn-01.defensys.seg.br` (coturn STUN/TURN — usado pelo Talk para WebRTC, aponta para o IP público do servidor)
 
 **Por Instância de Cliente:**
 Cada instância requer **apenas 1 registro DNS do tipo A** apontando para o IP do servidor:
@@ -139,7 +140,7 @@ O script `deploy-server.sh` automatiza toda a preparação do servidor. Ele exec
 2. Instala o Docker Engine e Docker Compose (plugin v2) do repositório oficial.
 3. Cria a rede Docker `proxy` e a estrutura de diretórios.
 4. Configura e inicia o Traefik v3.x (latest) com Let's Encrypt (sem porta 8080 exposta).
-5. Instala o `manage.sh` v11.0 em `/opt/nextcloud-customers/` e cria o link simbólico `/usr/local/bin/nextcloud-manage`.
+5. Instala o `manage.sh` v11.1 em `/opt/nextcloud-customers/` e cria o link simbólico `/usr/local/bin/nextcloud-manage`.
 6. Configura e inicia os **Serviços Compartilhados** em `/opt/shared-services/`.
 
 Execute com seu e-mail para o Let's Encrypt:
@@ -151,7 +152,7 @@ sudo ./scripts/deploy-server.sh --email seu-email@dominio.com
 Opcionalmente, pode forçar o IP do servidor (útil se a detecção automática falhar):
 
 ```bash
-sudo ./scripts/deploy-server.sh --email seu-email@dominio.com --ip 200.50.151.10
+sudo ./scripts/deploy-server.sh --email seu-email@dominio.com --ip 200.50.151.10 --turn-domain turn-01.defensys.seg.br
 ```
 
 Ao final, o script exibirá um resumo com todas as informações do servidor. O servidor agora está pronto para receber clientes.
