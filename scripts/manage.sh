@@ -21,6 +21,7 @@ SHARED_DIR="/opt/shared-services"
 SERVER_IP="200.50.151.21"
 COLLABORA_DOMAIN="collabora-01.defensys.seg.br"
 SIGNALING_DOMAIN="signaling-01.defensys.seg.br"
+TURN_DOMAIN="turn-01.defensys.seg.br"
 DC="docker-compose"
 
 # Cores
@@ -180,7 +181,7 @@ ${backend_sections}
 [turn]
 apikey = static
 secret = ${TURN_SECRET}
-servers = turn:${SERVER_IP}:3478?transport=udp,turn:${SERVER_IP}:3478?transport=tcp
+servers = turn:${TURN_DOMAIN}:3478?transport=udp,turn:${TURN_DOMAIN}:3478?transport=tcp
 EOF
 
     # Reiniciar signaling
@@ -423,7 +424,7 @@ Redis (compartilhado):
   DB Index: ${REDIS_DB}
 
 TURN Server (compartilhado):
-  Endereço: turn:${SERVER_IP}:3478
+  Endereço: turn:${TURN_DOMAIN}:3478
   Secret: ${TURN_SECRET}
 
 Signaling Server (compartilhado):
@@ -512,8 +513,8 @@ EOF
 
     # 5. Configurar Talk com TURN/STUN (compartilhado)
     log_info "[5/12] Configurando Talk com TURN/STUN..."
-    run_occ "$APP" config:app:set spreed turn_servers --value="[{\"server\":\"turn:${SERVER_IP}:3478\",\"secret\":\"${TURN_SECRET}\",\"protocols\":\"udp,tcp\"}]"
-    run_occ "$APP" config:app:set spreed stun_servers --value="[\"${SERVER_IP}:3478\"]"
+    run_occ "$APP" config:app:set spreed turn_servers --value="[{\"server\":\"${TURN_DOMAIN}:3478\",\"secret\":\"${TURN_SECRET}\",\"protocols\":\"udp,tcp\"}]"
+    run_occ "$APP" config:app:set spreed stun_servers --value="[\"${TURN_DOMAIN}:3478\"]"
     log_success "Talk TURN/STUN configurado"
 
     # 6. Configurar Talk HPB (Signaling compartilhado)
@@ -593,7 +594,7 @@ EOF
     echo ""
     echo "  Collabora:  https://${COLLABORA_DOMAIN} (compartilhado)"
     echo "  Signaling:  https://${SIGNALING_DOMAIN} (compartilhado)"
-    echo "  TURN:       turn:${SERVER_IP}:3478 (compartilhado)"
+    echo "  TURN:       turn:${TURN_DOMAIN}:3478 (compartilhado)"
     echo ""
     echo "  Credenciais salvas em: $BASE_DIR/$CLIENT_NAME/.credentials"
     echo ""
@@ -891,7 +892,7 @@ cmd_shared_status() {
     echo ""
     echo "  Collabora:  https://${COLLABORA_DOMAIN}"
     echo "  Signaling:  https://${SIGNALING_DOMAIN}"
-    echo "  TURN:       turn:${SERVER_IP}:3478"
+    echo "  TURN:       turn:${TURN_DOMAIN}:3478"
     echo ""
 }
 
