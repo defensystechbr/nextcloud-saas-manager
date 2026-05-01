@@ -119,7 +119,7 @@ services:
       - proxy
 
   # ============================================================
-  # Talk Recording Server — multi-backend via recording.conf
+  # Talk Recording Server — multi-backend via server.conf
   # ============================================================
   recording:
     image: ghcr.io/nextcloud-releases/aio-talk-recording:latest
@@ -127,9 +127,9 @@ services:
     restart: always
     init: true
     shm_size: '2gb'
-    entrypoint: ["python", "-m", "nextcloud.talk.recording", "--config", "/conf/recording.conf"]
+    entrypoint: ["python", "-m", "nextcloud.talk.recording", "--config", "/conf/server.conf"]
     volumes:
-      - ./recording/recording.conf:/conf/recording.conf:ro
+      - ./recording/server.conf:/conf/server.conf:ro
       - recording-tmp:/tmp
     depends_on:
       - signaling
