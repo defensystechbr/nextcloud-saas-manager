@@ -22,7 +22,19 @@ SERVER_IP="200.50.151.21"
 COLLABORA_DOMAIN="collabora-01.defensys.seg.br"
 SIGNALING_DOMAIN="signaling-01.defensys.seg.br"
 TURN_DOMAIN="turn-01.defensys.seg.br"
-DC="docker-compose"
+
+# Auto-detectar comando do Docker Compose:
+# - Plugin v2 (recomendado, padrao no Docker moderno): 'docker compose'
+# - Standalone v1 (legado): 'docker-compose'
+if docker compose version >/dev/null 2>&1; then
+    DC="docker compose"
+elif command -v docker-compose >/dev/null 2>&1; then
+    DC="docker-compose"
+else
+    echo -e "\033[0;31m[ERROR]\033[0m Nem 'docker compose' (v2) nem 'docker-compose' (v1) encontrados." >&2
+    echo -e "\033[0;31m[ERROR]\033[0m Instale o Docker Compose: https://docs.docker.com/compose/install/" >&2
+    exit 1
+fi
 
 # Cores
 RED='\033[0;31m'
