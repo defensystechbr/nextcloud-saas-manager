@@ -448,6 +448,10 @@ services:
       - NC_INSTANCE_URL=https://${DOMAIN}
     volumes:
       - ./harp-certs:/certs
+      # Required by AppAPI Docker Deploy Daemon: HaRP must proxy Docker API
+      # so Nextcloud can install/manage ExApps via /_ping endpoint.
+      # See: https://docs.nextcloud.com/server/stable/admin_manual/exapps_management/DeployConfigurations.html
+      - /var/run/docker.sock:/var/run/docker.sock
     networks:
       - shared
 
