@@ -25,9 +25,9 @@ Deve retornar o IP do servidor. Se não retornar, aguarde a propagação ou corr
 
 Os domínios compartilhados do Collabora, Signaling e TURN também devem resolver:
 ```bash
-dig +short collabora-01.defensys.seg.br
-dig +short signaling-01.defensys.seg.br
-dig +short turn-01.defensys.seg.br   # introduzido na v11.2
+dig +short collabora-01.EXEMPLO.com.br
+dig +short signaling-01.EXEMPLO.com.br
+dig +short turn-01.EXEMPLO.com.br   # introduzido na v11.2
 ```
 
 ### 2. Porta 80 bloqueada
@@ -104,7 +104,7 @@ sudo nextcloud-manage acme _ start
 O domínio do Collabora compartilhado deve resolver para o IP do servidor:
 
 ```bash
-dig +short collabora-01.defensys.seg.br
+dig +short collabora-01.EXEMPLO.com.br
 ```
 
 ### 2. Container do Collabora não está rodando
@@ -129,10 +129,10 @@ grep COLLABORA_ALLOWLIST /opt/shared-services/.env
 # Verificar a configuração atual
 docker exec -u www-data acme-app php occ config:app:get richdocuments wopi_url
 
-# Deve retornar: https://collabora-01.defensys.seg.br
+# Deve retornar: https://collabora-01.EXEMPLO.com.br
 # Se estiver errado, corrigir:
-docker exec -u www-data acme-app php occ config:app:set richdocuments wopi_url --value="https://collabora-01.defensys.seg.br"
-docker exec -u www-data acme-app php occ config:app:set richdocuments public_wopi_url --value="https://collabora-01.defensys.seg.br"
+docker exec -u www-data acme-app php occ config:app:set richdocuments wopi_url --value="https://collabora-01.EXEMPLO.com.br"
+docker exec -u www-data acme-app php occ config:app:set richdocuments public_wopi_url --value="https://collabora-01.EXEMPLO.com.br"
 ```
 
 ---
@@ -193,14 +193,14 @@ docker exec -u www-data acme-app php occ config:app:get spreed turn_servers
 docker exec -u www-data acme-app php occ config:app:get spreed stun_servers
 ```
 
-**Bug conhecido (corrigido na v11.2):** se a saída mostrar a URL com prefixo duplicado, por exemplo `"server":"turn:turn-01.defensys.seg.br:3478"`, isso impede a coleta de candidatos ICE. O valor correto não contém o esquema `turn:` no campo `server` (o front-end o concatena automaticamente). Para reaplicar manualmente em uma instância legada:
+**Bug conhecido (corrigido na v11.2):** se a saída mostrar a URL com prefixo duplicado, por exemplo `"server":"turn:turn-01.EXEMPLO.com.br:3478"`, isso impede a coleta de candidatos ICE. O valor correto não contém o esquema `turn:` no campo `server` (o front-end o concatena automaticamente). Para reaplicar manualmente em uma instância legada:
 
 ```bash
 TURN_SECRET=$(grep '^TURN_SECRET=' /opt/shared-services/.env | cut -d= -f2)
 docker exec -u www-data acme-app php occ config:app:set spreed turn_servers \
-  --value="[{\"server\":\"turn-01.defensys.seg.br:3478\",\"secret\":\"${TURN_SECRET}\",\"protocols\":\"udp,tcp\"}]"
+  --value="[{\"server\":\"turn-01.EXEMPLO.com.br:3478\",\"secret\":\"${TURN_SECRET}\",\"protocols\":\"udp,tcp\"}]"
 docker exec -u www-data acme-app php occ config:app:set spreed stun_servers \
-  --value="[\"turn-01.defensys.seg.br:3478\"]"
+  --value="[\"turn-01.EXEMPLO.com.br:3478\"]"
 ```
 
 ### 4. Verificar o HPB Compartilhado (Signaling Server)
@@ -220,10 +220,10 @@ docker logs shared-signaling --tail 50
 docker exec -u www-data acme-app php occ config:app:get spreed signaling_servers
 
 # Verificar DNS do signaling
-dig +short signaling-01.defensys.seg.br
+dig +short signaling-01.EXEMPLO.com.br
 
 # Testar HTTPS do signaling
-curl -sI https://signaling-01.defensys.seg.br
+curl -sI https://signaling-01.EXEMPLO.com.br
 ```
 
 ### 5. Verificar Backend do Cliente no Signaling

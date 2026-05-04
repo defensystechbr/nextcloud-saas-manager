@@ -27,8 +27,13 @@ log_error()   { echo -e "${RED}[ERROR]${NC} $1"; }
 # ============================================================
 SHARED_DIR="/opt/shared-services"
 SERVER_IP="${SERVER_IP:-$(curl -s4 ifconfig.me)}"
-COLLABORA_DOMAIN="${COLLABORA_DOMAIN:-collabora-01.defensys.seg.br}"
-SIGNALING_DOMAIN="${SIGNALING_DOMAIN:-signaling-01.defensys.seg.br}"
+# Dominios dos servicos compartilhados (devem ser passados via env vars).
+# Se nao forem fornecidos, usa o IP do servidor como fallback (Talk vai funcionar
+# mas sem certificado proprio para signaling/collabora). Recomendado SEMPRE
+# definir COLLABORA_DOMAIN, SIGNALING_DOMAIN e TURN_DOMAIN.
+COLLABORA_DOMAIN="${COLLABORA_DOMAIN:-collabora-01.example.com}"
+SIGNALING_DOMAIN="${SIGNALING_DOMAIN:-signaling-01.example.com}"
+TURN_DOMAIN="${TURN_DOMAIN:-${SERVER_IP}}"
 
 # ============================================================
 # VERIFICAÇÕES
@@ -55,6 +60,7 @@ log_info "============================================"
 log_info "IP do Servidor: $SERVER_IP"
 log_info "Collabora: $COLLABORA_DOMAIN"
 log_info "Signaling: $SIGNALING_DOMAIN"
+log_info "TURN:      $TURN_DOMAIN"
 log_info "============================================"
 
 # ============================================================
@@ -92,6 +98,7 @@ SERVER_IP=${SERVER_IP}
 # Domínios dos serviços compartilhados
 COLLABORA_DOMAIN=${COLLABORA_DOMAIN}
 SIGNALING_DOMAIN=${SIGNALING_DOMAIN}
+TURN_DOMAIN=${TURN_DOMAIN}
 
 # MariaDB
 DB_ROOT_PASSWORD=${DB_ROOT_PASSWORD}
@@ -269,7 +276,7 @@ secret = ${SIGNALING_SECRET}
 [turn]
 apikey = static
 secret = ${TURN_SECRET}
-servers = turn:${SERVER_IP}:3478?transport=udp,turn:${SERVER_IP}:3478?transport=tcp
+servers = turn:${TURN_DOMAIN}:3478?transport=udp,turn:${TURN_DOMAIN}:3478?transport=tcp
 EOF
 log_success "signaling.conf criado"
 
@@ -375,7 +382,7 @@ if [ "$ALL_OK" = true ]; then
     echo ""
     echo "  Collabora:  https://${COLLABORA_DOMAIN}"
     echo "  Signaling:  https://${SIGNALING_DOMAIN}"
-    echo "  TURN:       turn:${SERVER_IP}:3478"
+    echo "  TURN:       turn:${TURN_DOMAIN}:3478"
     echo "  MariaDB:    shared-db:3306"
     echo "  Redis:      shared-redis:6379"
     echo "  Recording:  shared-recording:1234"

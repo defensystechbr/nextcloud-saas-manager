@@ -144,14 +144,21 @@ if [ -z "$ACME_EMAIL" ]; then
 fi
 
 if [ -z "$COLLABORA_DOMAIN" ]; then
-    log_error "O domínio do Collabora é obrigatório! (--collabora-domain)"
-    echo "Exemplo: --collabora-domain collabora-01.defensys.seg.br"
+    log_error "O dominio do Collabora e obrigatorio! (--collabora-domain)"
+    echo "Exemplo: --collabora-domain collabora-01.SEU-DOMINIO.com.br"
     exit 1
 fi
 
 if [ -z "$SIGNALING_DOMAIN" ]; then
-    log_error "O domínio do Signaling é obrigatório! (--signaling-domain)"
-    echo "Exemplo: --signaling-domain signaling-01.defensys.seg.br"
+    log_error "O dominio do Signaling e obrigatorio! (--signaling-domain)"
+    echo "Exemplo: --signaling-domain signaling-01.SEU-DOMINIO.com.br"
+    exit 1
+fi
+
+if [ -z "$TURN_DOMAIN" ]; then
+    log_error "O dominio do TURN e obrigatorio! (--turn-domain)"
+    echo "Exemplo: --turn-domain turn-01.SEU-DOMINIO.com.br"
+    echo "Esse dominio deve ser um registro DNS tipo A apontando para o IP publico do servidor."
     exit 1
 fi
 
@@ -173,7 +180,8 @@ echo "  E-mail ACME:       $ACME_EMAIL"
 echo "  IP Servidor:       $SERVER_IP"
 echo "  Collabora Domain:  $COLLABORA_DOMAIN"
 echo "  Signaling Domain:  $SIGNALING_DOMAIN"
-echo "  Virtualização:     $(systemd-detect-virt 2>/dev/null || echo 'desconhecida')"
+echo "  TURN Domain:       $TURN_DOMAIN"
+echo "  Virtualizacao:     $(systemd-detect-virt 2>/dev/null || echo 'desconhecida')"
 echo ""
 echo "============================================"
 echo ""
@@ -404,9 +412,10 @@ if [ ! -f "$SHARED_DIR/.env" ]; then
 # Servidor
 SERVER_IP=${SERVER_IP}
 
-# Domínios dos serviços compartilhados
+# Dominios dos servicos compartilhados
 COLLABORA_DOMAIN=${COLLABORA_DOMAIN}
 SIGNALING_DOMAIN=${SIGNALING_DOMAIN}
+TURN_DOMAIN=${TURN_DOMAIN}
 
 # MariaDB
 DB_ROOT_PASSWORD=${DB_ROOT_PASSWORD}
@@ -807,13 +816,16 @@ else
 fi
 
 if [ -f /opt/nextcloud-customers/manage.sh ]; then
-    # Atualizar SERVER_IP/TURN_DOMAIN no manage.sh
-    sed -i "s|SERVER_IP=\"[^\"]*\"|SERVER_IP=\"${SERVER_IP}\"|" /opt/nextcloud-customers/manage.sh
-    if [ -n "$TURN_DOMAIN" ]; then
-        sed -i "s|TURN_DOMAIN=\"[^\"]*\"|TURN_DOMAIN=\"${TURN_DOMAIN}\"|" /opt/nextcloud-customers/manage.sh
-    fi
+    # Atualizar os 4 defaults hardcoded no manage.sh com os valores reais.
+    # OBS: o manage.sh tambem le do /opt/shared-services/.env (fonte unica),
+    # mas mantemos o sed aqui como fallback de seguranca para o caso de o
+    # .env ainda nao existir no momento da primeira execucao.
+    sed -i "s|^SERVER_IP=\"[^\"]*\"|SERVER_IP=\"${SERVER_IP}\"|" /opt/nextcloud-customers/manage.sh
+    sed -i "s|^COLLABORA_DOMAIN=\"[^\"]*\"|COLLABORA_DOMAIN=\"${COLLABORA_DOMAIN}\"|" /opt/nextcloud-customers/manage.sh
+    sed -i "s|^SIGNALING_DOMAIN=\"[^\"]*\"|SIGNALING_DOMAIN=\"${SIGNALING_DOMAIN}\"|" /opt/nextcloud-customers/manage.sh
+    sed -i "s|^TURN_DOMAIN=\"[^\"]*\"|TURN_DOMAIN=\"${TURN_DOMAIN}\"|" /opt/nextcloud-customers/manage.sh
 
-    # Permissões e link simbólico
+    # Permissoes e link simbolico
     chmod +x /opt/nextcloud-customers/manage.sh
     ln -sf /opt/nextcloud-customers/manage.sh /usr/local/bin/nextcloud-manage
 
@@ -853,7 +865,7 @@ echo "  Traefik:           ${TRAEFIK_VER:-latest}"
 echo "  ACME Email:        ${ACME_EMAIL}"
 echo "  Collabora:         https://${COLLABORA_DOMAIN}"
 echo "  Signaling:         https://${SIGNALING_DOMAIN}"
-echo "  TURN:              turn:${SERVER_IP}:3478"
+echo "  TURN:              turn:${TURN_DOMAIN}:3478"
 echo "  manage.sh:         /opt/nextcloud-customers/manage.sh"
 echo "  Comando:           nextcloud-manage"
 echo "  Backups:           /opt/nextcloud-customers/backups/"
