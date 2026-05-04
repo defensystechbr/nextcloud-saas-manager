@@ -18,10 +18,30 @@ set -uo pipefail
 # ============================================================
 BASE_DIR="/opt/nextcloud-customers"
 SHARED_DIR="/opt/shared-services"
+
+# IMPORTANTE: os valores abaixo sao defaults de FALLBACK apenas.
+# Em producao, o deploy-server.sh sobrescreve estas linhas via 'sed' com
+# os valores passados via --ip, --collabora-domain, --signaling-domain e
+# --turn-domain. Adicionalmente, se /opt/shared-services/.env existir, os
+# valores SERVER_IP, COLLABORA_DOMAIN, SIGNALING_DOMAIN e TURN_DOMAIN sao
+# carregados de la (fonte unica de verdade).
 SERVER_IP="200.50.151.21"
 COLLABORA_DOMAIN="collabora-01.defensys.seg.br"
 SIGNALING_DOMAIN="signaling-01.defensys.seg.br"
 TURN_DOMAIN="turn-01.defensys.seg.br"
+
+# Carregar valores reais do .env compartilhado (fonte unica de verdade)
+if [ -f "$SHARED_DIR/.env" ]; then
+    # Ler apenas as 4 chaves de interesse, ignorando o resto
+    while IFS='=' read -r k v; do
+        case "$k" in
+            SERVER_IP)         [ -n "$v" ] && SERVER_IP="$v" ;;
+            COLLABORA_DOMAIN)  [ -n "$v" ] && COLLABORA_DOMAIN="$v" ;;
+            SIGNALING_DOMAIN)  [ -n "$v" ] && SIGNALING_DOMAIN="$v" ;;
+            TURN_DOMAIN)       [ -n "$v" ] && TURN_DOMAIN="$v" ;;
+        esac
+    done < "$SHARED_DIR/.env"
+fi
 
 # Auto-detectar comando do Docker Compose:
 # - Plugin v2 (recomendado, padrao no Docker moderno): 'docker compose'

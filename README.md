@@ -55,10 +55,12 @@ A implementação atual provisiona três containers dedicados a cada cliente: o 
 
 ### DNS Necessários
 
-**Domínios Fixos (Globais):**
-- `collabora-01.defensys.seg.br` (Collabora Online)
-- `signaling-01.defensys.seg.br` (Talk High Performance Backend)
-- `turn-01.defensys.seg.br` (coturn STUN/TURN — usado pelo Talk para WebRTC, aponta para o IP público do servidor)
+**Dominios Fixos (Globais)** — substitua `EXEMPLO.com.br` pelo dominio que voce controla:
+- `collabora-01.EXEMPLO.com.br` (Collabora Online)
+- `signaling-01.EXEMPLO.com.br` (Talk High Performance Backend)
+- `turn-01.EXEMPLO.com.br` (coturn STUN/TURN — usado pelo Talk para WebRTC, aponta para o IP publico do servidor)
+
+Todos devem ser configurados como registros DNS tipo `A` apontando para o IP do servidor **antes** de rodar o deploy. Os tres devem ser passados via `--collabora-domain`, `--signaling-domain` e `--turn-domain` no `deploy-server.sh`.
 
 **Por Instância de Cliente:**
 Cada instância requer **apenas 1 registro DNS do tipo A** apontando para o IP do servidor:
@@ -89,7 +91,7 @@ Após o deploy, o servidor terá a seguinte estrutura:
 │   └── ...                           # Configurações (coturn, janus, etc)
 │
 └── nextcloud-customers/              # Diretório principal da plataforma
-    ├── manage.sh                     # Script de gerenciamento (v11.1)
+    ├── manage.sh                     # Script de gerenciamento (v11.3+)
     ├── backups/                      # Backups de todas as instâncias
     ├── <nome-cliente-1>/             # Instância do cliente 1
     │   ├── docker-compose.yml        # Compose da instância (app + cron)
@@ -147,22 +149,30 @@ O script `deploy-server.sh` automatiza toda a preparação do servidor. Ele exec
 5. Instala o `manage.sh` v11.3 em `/opt/nextcloud-customers/` e cria o link simbólico `/usr/local/bin/nextcloud-manage`.
 6. Configura e inicia os **Serviços Compartilhados** em `/opt/shared-services/`.
 
-Execute com seu e-mail para o Let's Encrypt:
+Execute com seu e-mail e os tres dominios compartilhados (todos obrigatorios):
 
 ```bash
-sudo ./scripts/deploy-server.sh --email seu-email@dominio.com
+sudo bash scripts/deploy-server.sh \
+    --email seu-email@dominio.com \
+    --collabora-domain collabora-01.SEU-DOMINIO.com.br \
+    --signaling-domain signaling-01.SEU-DOMINIO.com.br \
+    --turn-domain turn-01.SEU-DOMINIO.com.br
 ```
 
-Opcionalmente, pode forçar o IP do servidor (útil se a detecção automática falhar):
+> **Substitua `SEU-DOMINIO.com.br` pelo dominio que voce controla** e que ja tenha registros DNS A apontando para o IP do servidor (ver secao `DNS Necessarios` acima).
+
+Opcionalmente, pode forcar o IP do servidor (util se a deteccao automatica falhar):
 
 ```bash
 sudo bash scripts/deploy-server.sh \
     --email seu-email@dominio.com \
     --ip 200.50.151.10 \
-    --turn-domain turn-01.defensys.seg.br \
-    --collabora-domain collabora-01.defensys.seg.br \
-    --signaling-domain signaling-01.defensys.seg.br
+    --collabora-domain collabora-01.SEU-DOMINIO.com.br \
+    --signaling-domain signaling-01.SEU-DOMINIO.com.br \
+    --turn-domain turn-01.SEU-DOMINIO.com.br
 ```
+
+> **Importante:** se voce nao passar `--turn-domain`, o `manage.sh` instalado ficara com o default `turn-01.defensys.seg.br` hardcoded e gerara configuracoes erradas para suas instancias. Sempre passe os tres dominios.
 
 Ao final, o script exibirá um resumo com todas as informações do servidor. O servidor agora está pronto para receber clientes.
 
@@ -263,11 +273,20 @@ nextcloud-saas-manager/
 ├── README.md                      # Este arquivo
 ├── LICENSE                        # Licença MIT
 ├── .gitignore
+├── .github/
+│   └── workflows/
+│       └── shellcheck.yml         # CI: lint automatico de scripts em PRs
 ├── scripts/
 │   ├── deploy-server.sh           # Script para preparar um novo servidor do zero
-│   └── manage.sh                  # Script para gerenciar instâncias de clientes (v11.3)
+│   └── manage.sh                  # Script para gerenciar instancias de clientes (v11.3+)
+├── shared-services/               # Definicoes dos servicos compartilhados (8 containers)
+│   ├── docker-compose.yml         # Compose dos shared-services
+│   ├── setup-shared.sh            # Script alternativo standalone para subir shared-services
+│   └── recording/
+│       ├── Dockerfile             # Imagem custom do Recording Server (opcional)
+│       └── server.conf            # Template de configuracao do Recording Server
 └── docs/
-    ├── ADMINISTRATION.md          # Guia completo de administração de instâncias
+    ├── ADMINISTRATION.md          # Guia completo de administracao de instancias
     └── TROUBLESHOOTING.md         # Guia para resolver problemas comuns
 ```
 
