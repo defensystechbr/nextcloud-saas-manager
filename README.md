@@ -1,4 +1,4 @@
-# Nextcloud SaaS Manager v11.3
+# Nextcloud SaaS Manager v11.3.3
 
 Este repositório contém um conjunto de scripts para implantar e gerenciar uma plataforma Nextcloud SaaS multi-tenant, utilizando Docker, Traefik como reverse proxy e Let's Encrypt para certificados SSL automáticos.
 
@@ -9,6 +9,7 @@ O objetivo é permitir que qualquer pessoa com um servidor Ubuntu 24.04 (KVM) po
 ### Changelog
 | Versão | Data       | Principais Mudanças |
 |:-------|:-----------|:--------------------|
+| **v11.3.3** | 2026-05-04 | **Fix HaRP — "Deploy daemon `harp_install` inacessível":** o container `<cliente>-harp` passou a montar `/var/run/docker.sock:/var/run/docker.sock` (read-only) tanto no template gerado por `scripts/manage.sh` (linha 454) quanto no template embutido em `scripts/deploy-server.sh` (linha 338). O daemon AppAPI/HaRP precisa do socket do Docker no host para criar, atualizar e remover containers de ExApps; sem o mount o painel admin do Nextcloud exibia o aviso permanente *"Deploy daemon `harp_install` inacessível"* e qualquer instalação de ExApp falhava. Para instâncias legadas, ver guia em `docs/TROUBLESHOOTING.md` — seção *AppAPI / HaRP não funciona*, item 4. Validado em produção (`mecloud360`, `terminalx`, `nextcloud-teste`). |
 | **v11.3** | 2026-05-01 | **QA Round 3 — Correções críticas:** (1) Recording Server: adicionada seção `[signaling2]` com URL pública (`https://signaling-01...`) que elimina o erro `No configured signaling secret for https://...` e permite que o bot de gravação entre na chamada como participante. (2) Renomeado `recording.conf` → `server.conf` para alinhar com o `Dockerfile` (build estava quebrado em ambientes novos). (3) `setup-shared.sh` agora substitui placeholders no template `server.conf` no boot inicial (evita config inválida antes do primeiro cliente). (4) Removido secret hardcoded `janusoverlord` — agora `JANUS_ADMIN_SECRET` e `JANUS_ROOM_KEY` são gerados dinamicamente via `openssl rand -hex 32`. (5) `signaling.conf` template inicial não emite mais `backends = ` vazio (define `[backend1] placeholder.invalid`). (6) `manage.sh remove`: proteção `${VAR:?}` no `rm -rf` + `cd ... \|\| exit` em todos os pontos críticos. (7) Documentação: contagem de containers unificada para 3 por cliente (`app`, `cron`, `harp`). (8) Adicionado workflow GitHub Actions `shellcheck.yml` para auditoria automática em PRs. Validado por QA Round 3 contra deploy em produção `nxdev.defensys.seg.br` com SSL Labs A+, 12 apps funcionando e chamada Talk com gravação real. |
 | **v11.2** | 2026-05-01 | **Fix de bootstrap do Recording:** o template inicial gerado por `deploy-server.sh` para `recording.conf` (e também `signaling.conf`) tinha `backends = ` vazio, provocando `KeyError: ''` em loop no container `shared-recording` antes da criação da primeira instância. Agora o template traz um placeholder `backend1 → https://placeholder.invalid`, e as funções `update_*_backends` no `manage.sh` aplicam o mesmo fallback ao remover a última instância. README inclui o `chmod +x` obrigatório antes do `sudo bash deploy-server.sh`. |
 | **v11.1** | 2026-05-01 | **Fixes Críticos do Talk:** (1) URL do TURN agora usa hostname `turn-01.defensys.seg.br` sem prefixo duplicado `turn:turn:`; (2) `recording_servers` aplicado via `run_occ` em vez de `echo yes \| docker exec` (eliminando erro `--update-only`); (3) template `recording.conf` reescrito com `backend1`/`signaling1` (sem hífen) eliminando `KeyError: ''` no boot; (4) nova variável `TURN_DOMAIN` no `manage.sh` e `deploy-server.sh` com flag CLI `--turn-domain`; (5) coturn ganha `lt-cred-mech` e `realm` por hostname. Validado por chamada Talk real entre 2 navegadores (1m46s). |
@@ -31,7 +32,7 @@ O objetivo é permitir que qualquer pessoa com um servidor Ubuntu 24.04 (KVM) po
 | **Servidor Host** | Ubuntu 24.04 LTS (KVM recomendado, **não** LXC) |
 | **Orquestração** | Docker Engine 29.x + Docker Compose plugin v2 |
 | **Reverse Proxy** | Traefik v3.x+ (latest) com Let's Encrypt automático |
-| **Gerenciamento** | `manage.sh` v11.3 (script para CRUD de instâncias) |
+| **Gerenciamento** | `manage.sh` v11.3.3 (script para CRUD de instâncias) |
 | **Isolamento** | Arquitetura híbrida: **3 containers por cliente + 8 serviços compartilhados globais** |
 | **Rede** | Rede Docker `proxy` (Traefik) e `shared` (Serviços Compartilhados) |
 
@@ -51,7 +52,7 @@ Para otimizar o uso de recursos (CPU/Memória), a arquitetura agora divide os se
 
 **Serviços por Cliente (3 containers por instância):**
 
-A implementação atual provisiona três containers dedicados a cada cliente: o `<nome>-app` rodando Nextcloud com Apache e PHP isolado, o `<nome>-cron` responsável pelas tarefas de background (`cron.sh`), e o `<nome>-harp` que atua como daemon do AppAPI (HaRP) para hospedar ExApps externos.
+A implementação atual provisiona três containers dedicados a cada cliente: o `<nome>-app` rodando Nextcloud com Apache e PHP isolado, o `<nome>-cron` responsável pelas tarefas de background (`cron.sh`), e o `<nome>-harp` que atua como daemon do AppAPI (HaRP) para hospedar ExApps externos. O container `harp` recebe o socket do Docker do host (`/var/run/docker.sock`, mount RW) por exigência do daemon AppAPI, que precisa criar e gerenciar containers de ExApps no host — sem esse mount, o painel admin exibe o aviso *"Deploy daemon `harp_install` inacessível"* (corrigido em **v11.3.3**).
 
 ### DNS Necessários
 
@@ -91,7 +92,7 @@ Após o deploy, o servidor terá a seguinte estrutura:
 │   └── ...                           # Configurações (coturn, janus, etc)
 │
 └── nextcloud-customers/              # Diretório principal da plataforma
-    ├── manage.sh                     # Script de gerenciamento (v11.3+)
+    ├── manage.sh                     # Script de gerenciamento (v11.3.3+)
     ├── backups/                      # Backups de todas as instâncias
     ├── <nome-cliente-1>/             # Instância do cliente 1
     │   ├── docker-compose.yml        # Compose da instância (app + cron)
@@ -146,7 +147,7 @@ O script `deploy-server.sh` automatiza toda a preparação do servidor. Ele exec
 2. Instala o Docker Engine e Docker Compose (plugin v2) do repositório oficial.
 3. Cria a rede Docker `proxy` e a estrutura de diretórios.
 4. Configura e inicia o Traefik v3.x (latest) com Let's Encrypt (sem porta 8080 exposta).
-5. Instala o `manage.sh` v11.3 em `/opt/nextcloud-customers/` e cria o link simbólico `/usr/local/bin/nextcloud-manage`.
+5. Instala o `manage.sh` v11.3.3 em `/opt/nextcloud-customers/` e cria o link simbólico `/usr/local/bin/nextcloud-manage`.
 6. Configura e inicia os **Serviços Compartilhados** em `/opt/shared-services/`.
 
 Execute com seu e-mail e os tres dominios compartilhados (todos obrigatorios):

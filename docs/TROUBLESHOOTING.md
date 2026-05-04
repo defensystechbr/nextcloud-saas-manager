@@ -307,6 +307,57 @@ O container HaRP tem healthcheck integrado. Verifique se está "healthy":
 docker inspect acme-harp --format '{{.State.Health.Status}}'
 ```
 
+### 4. `docker.sock` não montado no container HaRP (corrigido na v11.3.3)
+
+**Sintoma:** o painel *Administração → Visão Geral* exibe permanentemente o aviso *"Deploy daemon `harp_install` inacessível"*, e qualquer tentativa de instalar/atualizar um ExApp via *Apps → External apps* falha com erro de comunicação com o daemon. O container `<cliente>-harp` aparece como `healthy`, mas o daemon AppAPI não consegue criar nem gerenciar containers de ExApps.
+
+**Causa:** o template antigo de `docker-compose.yml` por instância (gerado por versões do `manage.sh` anteriores à v11.3.3) não montava `/var/run/docker.sock` no container `harp`. Sem acesso ao socket Docker do host, o daemon HaRP não consegue executar `docker create`/`docker start` para subir ExApps, e o Nextcloud sinaliza o daemon como inacessível.
+
+**Diagnóstico:**
+
+```bash
+# Verificar se o socket está montado no container harp
+docker inspect acme-harp --format '{{json .Mounts}}' | python3 -m json.tool | grep -A1 docker.sock
+
+# Saída esperada (v11.3.3+):
+#   "Source": "/var/run/docker.sock",
+#   "Destination": "/var/run/docker.sock",
+# Sem nenhuma saída → instância legada, aplicar a correção abaixo.
+```
+
+**Correção em instância legada (sem reinstalar):**
+
+```bash
+cd /opt/nextcloud-customers/acme
+
+# 1) Editar o docker-compose.yml: na seção do serviço `harp`, dentro de `volumes:`,
+#    adicionar a linha exata abaixo (RW — o daemon AppAPI precisa criar e remover
+#    containers de ExApps; não use `:ro` aqui, senão o problema persiste):
+#      - /var/run/docker.sock:/var/run/docker.sock
+#
+#    Referência: scripts/manage.sh linha 454 do repositório.
+
+# 2) Recriar somente o container harp
+docker compose up -d --force-recreate harp
+
+# 3) Validar o mount
+docker inspect acme-harp --format '{{json .Mounts}}' | python3 -m json.tool | grep -A1 docker.sock
+
+# 4) Recarregar a Visão Geral do painel admin (Ctrl+F5). O Nextcloud reavalia
+#    o estado do daemon a cada acesso à página e o aviso desaparece.
+```
+
+Se o aviso persistir mesmo após o reload, re-registre o daemon explicitamente:
+
+```bash
+docker exec -u www-data acme-app php occ app_api:daemon:list
+docker exec -u www-data acme-app php occ app_api:daemon:unregister harp_install || true
+# Em seguida re-execute o trecho 'app_api:daemon:register' do manage.sh
+# (procure por 'app_api:daemon:register' em scripts/manage.sh).
+```
+
+> **Nota de segurança:** montar `/var/run/docker.sock` no container `harp` concede a esse container privilégios equivalentes a root no host (qualquer processo dentro do container pode criar containers privilegiados, montar o filesystem do host etc.). O mount **precisa ser RW** — o daemon AppAPI usa o socket para criar, iniciar, parar e remover containers de ExApps; trocar para `:ro` faz o problema voltar. Mitigações adotadas: o container HaRP roda apenas a imagem oficial do AppAPI da Nextcloud GmbH, fica em uma rede Docker dedicada (não exposta diretamente à internet, apenas via Traefik) e não aceita código arbitrário do usuário. Apenas administradores do Nextcloud com permissão de instalar ExApps têm acesso indireto ao daemon.
+
 ---
 
 ## Comandos Úteis para Diagnóstico

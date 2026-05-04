@@ -193,7 +193,14 @@ docker exec -u www-data acme-app php occ config:app:get spreed signaling_servers
 
 # Verificar daemon AppAPI (HaRP)
 docker exec -u www-data acme-app php occ app_api:daemon:list
+
+# Verificar se o socket do Docker está montado no container harp
+# (requisito do daemon AppAPI a partir da v11.3.3 — sem ele o painel
+# admin mostra "Deploy daemon harp_install inacessível")
+docker inspect acme-harp --format '{{json .Mounts}}' | python3 -m json.tool | grep -A1 docker.sock
 ```
+
+> **Nota sobre o HaRP e `/var/run/docker.sock`:** o container `<cliente>-harp` monta o socket do Docker do host em modo RW. Esse mount é obrigatório para que o daemon AppAPI consiga criar, iniciar, parar e remover containers de ExApps; sem ele o painel admin reporta o daemon como inacessível e nenhum ExApp pode ser instalado. O acesso ao socket Docker concede privilégios equivalentes a root no host — por isso o container HaRP usa apenas a imagem oficial do AppAPI da Nextcloud GmbH e fica restrito à rede Docker `proxy`/`shared`. Para detalhes de diagnóstico em instâncias legadas, consulte `docs/TROUBLESHOOTING.md`, seção *AppAPI / HaRP não funciona*, item 4.
 
 ---
 
@@ -230,7 +237,7 @@ Os certificados são armazenados em `/opt/traefik/acme.json` e renovados automat
 
 ---
 
-## Estrutura de Arquivos por Instância (v11.3)
+## Estrutura de Arquivos por Instância (v11.3.3)
 
 ```
 /opt/nextcloud-customers/acme/
