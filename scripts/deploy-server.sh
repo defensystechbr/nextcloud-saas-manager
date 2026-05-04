@@ -38,6 +38,22 @@
 
 set -e
 
+# ============================================================
+# Resolver SCRIPT_DIR no topo (antes de qualquer 'cd' subsequente)
+# ============================================================
+# IMPORTANTE: usar 'realpath' aqui para garantir caminho ABSOLUTO mesmo
+# quando o script for invocado como 'sudo bash scripts/deploy-server.sh'
+# (caminho relativo). Sem isso, etapas posteriores que mudam o PWD (linha
+# 'cd "$SHARED_DIR"' na ETAPA 5) quebrariam tentativas de re-resolver o
+# diretorio do script via BASH_SOURCE relativo.
+if command -v realpath >/dev/null 2>&1; then
+    SCRIPT_DIR="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
+else
+    # Fallback portavel: capturar PWD enquanto ainda estamos no diretorio de invocacao
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)"
+fi
+export SCRIPT_DIR
+
 # Cores
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -772,7 +788,7 @@ log_info "Etapa 6/7: Instalando manage.sh v11.3..."
 
 # Auto-descobrir o manage.sh: prioriza --manage-url, depois /tmp/manage.sh,
 # depois o arquivo ao lado deste deploy-server.sh (caso normal de clone do repo).
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# SCRIPT_DIR ja foi resolvido no topo do script (antes de qualquer 'cd').
 LOCAL_MANAGE="${SCRIPT_DIR}/manage.sh"
 
 if [ -n "$MANAGE_URL" ]; then
