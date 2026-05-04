@@ -13,14 +13,19 @@
 #   - Traefik v3.x (latest) como reverse proxy com Let's Encrypt
 #   - Serviços Compartilhados (MariaDB, Redis, Collabora, coturn,
 #     NATS, Janus, Signaling, Recording)
-#   - manage.sh v11.3 para gerenciamento de instâncias
+#   - manage.sh v11.3.4 para gerenciamento de instâncias
 #   - Dependências: pwgen, jq, curl, openssl
 #
-# Uso:
-#   chmod +x deploy-server.sh
-#   sudo ./deploy-server.sh --email admin@dominio.com \
+# Uso (sempre invocado via `bash`, dispensa `chmod +x` no clone):
+#   sudo bash scripts/deploy-server.sh \
+#     --email admin@dominio.com \
 #     --collabora-domain collabora-01.dominio.com \
-#     --signaling-domain signaling-01.dominio.com
+#     --signaling-domain signaling-01.dominio.com \
+#     --turn-domain turn-01.dominio.com
+#
+# Permissões de execução dos artefatos finais (manage.sh em /opt/...,
+# setup-shared.sh standalone) são aplicadas automaticamente por este
+# script. Não execute `chmod +x` manualmente no diretório do clone.
 #
 # Requisitos:
 #   - Ubuntu 24.04 LTS (KVM recomendado, NÃO LXC)
@@ -829,7 +834,7 @@ if [ -f /opt/nextcloud-customers/manage.sh ]; then
     chmod +x /opt/nextcloud-customers/manage.sh
     ln -sf /opt/nextcloud-customers/manage.sh /usr/local/bin/nextcloud-manage
 
-    log_success "manage.sh v11.3 instalado: nextcloud-manage"
+    log_success "manage.sh v11.3.4 instalado: nextcloud-manage"
 fi
 
 # ============================================================
