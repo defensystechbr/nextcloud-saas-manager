@@ -934,7 +934,7 @@ cmd_shared_status() {
 # ============================================================
 usage() {
     echo ""
-    echo "Nextcloud SaaS Manager v11.2 (Arquitetura Compartilhada)"
+    echo "Nextcloud SaaS Manager v11.3 (Arquitetura Compartilhada)"
     echo ""
     echo "Uso:"
     echo "  $(basename "$0") <cliente> <domínio> create     Criar nova instância"

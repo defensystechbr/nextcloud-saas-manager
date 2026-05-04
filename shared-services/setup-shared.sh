@@ -1,7 +1,7 @@
 #!/bin/bash
 # ============================================================
 # Nextcloud SaaS — Setup dos Serviços Compartilhados
-# Versão: 11.0
+# Versão: 11.3
 # Autor: Defensys
 # ============================================================
 # Este script inicializa os serviços compartilhados que serão

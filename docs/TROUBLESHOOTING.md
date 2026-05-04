@@ -236,7 +236,7 @@ cat /opt/shared-services/hpb/signaling.conf
 
 ### 6. Verificar o Recording Server (`shared-recording`)
 
-**Bug conhecido (corrigido na v11.2):** o template inicial do `recording.conf` continha `backends = ` vazio (ou `backends = backend-1` com hífen), provocando `KeyError: ''` em loop no boot do container. Sintoma típico nos logs:
+**Bug conhecido (corrigido na v11.2/v11.3):** o template inicial do arquivo de configuração do recording continha `backends = ` vazio (ou `backends = backend-1` com hífen), provocando `KeyError: ''` em loop no boot do container. Além disso, o nome do arquivo foi padronizado como `server.conf` (a partir da v11.3) para alinhar com o `Dockerfile` da imagem oficial; versões legadas usam `recording.conf`. Sintoma típico nos logs:
 
 ```
 File "/usr/lib/python3/dist-packages/configparser.py", line 720, in get
@@ -250,13 +250,15 @@ KeyError: ''
 # Logs do recording
 docker logs shared-recording --tail 50
 
-# Ver a configuração atual
-cat /opt/shared-services/recording/recording.conf | grep -E 'backends|signalings|^\['
+# Ver a configuração atual (v11.3+ usa server.conf; legado usa recording.conf)
+CONF=/opt/shared-services/recording/server.conf
+[ -f "$CONF" ] || CONF=/opt/shared-services/recording/recording.conf
+cat "$CONF" | grep -E 'backends|signalings|^\['
 
 # Garantir nomes sem hífen e backend válido (subseqüentemente regravado pelo manage.sh)
 sudo sed -i 's/backends = backend-1/backends = backend1/; s/^\[backend-1\]/[backend1]/; \
   s/signalings = signaling-1/signalings = signaling1/; s/^\[signaling-1\]/[signaling1]/' \
-  /opt/shared-services/recording/recording.conf
+  "$CONF"
 
 # Recriar o container limpando state
 cd /opt/shared-services && docker compose up -d --force-recreate shared-recording
