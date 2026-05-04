@@ -3,7 +3,7 @@
 # Nextcloud SaaS — Deploy de Servidor de Produção
 # Autor: Defensys
 # Data: 2026-04-30
-# Versão: 2.0 (Arquitetura v11.2 — Serviços Compartilhados)
+# Versão: 2.1 (Arquitetura v11.3 — Serviços Compartilhados)
 # ============================================================
 #
 # Este script prepara um servidor Ubuntu 24.04 (KVM) do zero
@@ -13,7 +13,7 @@
 #   - Traefik v3.x (latest) como reverse proxy com Let's Encrypt
 #   - Serviços Compartilhados (MariaDB, Redis, Collabora, coturn,
 #     NATS, Janus, Signaling, Recording)
-#   - manage.sh v11.2 para gerenciamento de instâncias
+#   - manage.sh v11.3 para gerenciamento de instâncias
 #   - Dependências: pwgen, jq, curl, openssl
 #
 # Uso:
@@ -150,7 +150,7 @@ fi
 echo ""
 echo "============================================"
 echo "  Nextcloud SaaS — Deploy de Servidor v2.0"
-echo "  Arquitetura v11.2 (Serviços Compartilhados)"
+echo "  Arquitetura v11.3 (Serviços Compartilhados)"
 echo "============================================"
 echo ""
 echo "  E-mail ACME:       $ACME_EMAIL"
@@ -551,8 +551,9 @@ secret = ${TURN_SECRET}
 servers = turn:${TURN_DOMAIN:-$SERVER_IP}:3478?transport=udp,turn:${TURN_DOMAIN:-$SERVER_IP}:3478?transport=tcp
 EOF
 
-# Configurar Recording Server (template mínimo válido; sera reescrito por update_recording_backends)
-cat > "$SHARED_DIR/recording/recording.conf" << EOF
+# Configurar Recording Server (template mínimo válido; será reescrito por update_recording_backends).
+# Nome do arquivo: server.conf (alinhado com Dockerfile e shared-services/recording/server.conf).
+cat > "$SHARED_DIR/recording/server.conf" << EOF
 [logs]
 level = 30
 
@@ -709,9 +710,9 @@ services:
     restart: always
     init: true
     shm_size: '2gb'
-    entrypoint: ["python", "-m", "nextcloud.talk.recording", "--config", "/conf/recording.conf"]
+    entrypoint: ["python", "-m", "nextcloud.talk.recording", "--config", "/conf/server.conf"]
     volumes:
-      - ./recording/recording.conf:/conf/recording.conf:ro
+      - ./recording/server.conf:/conf/server.conf:ro
       - recording-tmp:/tmp
     depends_on:
       - signaling
@@ -765,9 +766,9 @@ else
 fi
 
 # ============================================================
-# ETAPA 6: INSTALAR MANAGE.SH v11.2
+# ETAPA 6: INSTALAR MANAGE.SH v11.3
 # ============================================================
-log_info "Etapa 6/7: Instalando manage.sh v11.2..."
+log_info "Etapa 6/7: Instalando manage.sh v11.3..."
 
 # Auto-descobrir o manage.sh: prioriza --manage-url, depois /tmp/manage.sh,
 # depois o arquivo ao lado deste deploy-server.sh (caso normal de clone do repo).
@@ -800,7 +801,7 @@ if [ -f /opt/nextcloud-customers/manage.sh ]; then
     chmod +x /opt/nextcloud-customers/manage.sh
     ln -sf /opt/nextcloud-customers/manage.sh /usr/local/bin/nextcloud-manage
 
-    log_success "manage.sh v11.2 instalado: nextcloud-manage"
+    log_success "manage.sh v11.3 instalado: nextcloud-manage"
 fi
 
 # ============================================================
