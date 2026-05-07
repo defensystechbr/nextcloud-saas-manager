@@ -26,3 +26,11 @@ Thumbs.db
 *~
 .vscode/
 .idea/
+
+# Beesy pre-flight discovery cache (local)
+docs/.discovery.json
+.cursorsession.lock
+
+# Beesy session-local state (cache, journal, mcp config) — NOT shared
+.cursor/
+.context-snapshot.md
