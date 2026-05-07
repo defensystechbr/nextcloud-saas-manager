@@ -566,5 +566,20 @@
     "usage_percent": 91.96466666666666,
     "messages_lost": 103
   },
-  "compact_count": 1
+  "compact_count": 1,
+  "autopilot": {
+    "active": true,
+    "sprint_range": [
+      "D1",
+      "D2",
+      "D3",
+      "D4",
+      "D5"
+    ],
+    "started_at": "2026-05-07T22:37:00Z",
+    "completed_sprints": [],
+    "hard_stops": [],
+    "current_sprint": "D1"
+  },
+  "active_automation": "pipeline"
 }
