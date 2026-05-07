@@ -106,17 +106,17 @@
 
 | Status | Tamanho | Tarefa | Skill/Command | Depende de |
 |--------|---------|--------|---------------|------------|
-| [ ] | P | 1.1 — Validar `.github/workflows/bats.yml` (job unit + integration com service redis:7-alpine) | `bash` + GitHub Actions UI | — |
-| [ ] | P | 1.2 — Validar `.github/workflows/shellcheck.yml` (severity=warning bloqueia, scandir scripts/+shared-services/+systemd/+ssh/) | `shellcheck` | — |
-| [ ] | P | 1.3 — Validar `.github/workflows/contracts-check.yml` (extrai JSON Schemas + OpenAPI + drift gate OCC allowlist §3.10.1 vs `lib/occ_bridge.sh`) | `check-jsonschema` + `redocly` | — |
-| [ ] | M | 1.4 — Estruturar `tests/` (helpers/setup.bash, helpers/redis_fixture.bash, estrutura unit/integration/e2e + Makefile alvo `make test`) | `bats` | — |
-| [ ] | M | 1.5 — Implementar `scripts/lib/validators.sh` + 6 testes unit | `bash` + `bats` | 1.4 |
-| [ ] | M | 1.6 — Implementar `scripts/lib/output_json.sh` + 5 testes unit | `bash` + `jq` + `bats` | 1.4 |
-| [ ] | M | 1.7 — Implementar `scripts/lib/job_queue.sh` + 6 testes integration (Redis) | `bash` + `redis-cli` + `bats` | 1.4 |
-| [ ] | M | 1.8 — Implementar `scripts/lib/job_runner.sh` + 4 testes unit (mock docker/redis) | `bash` + `bats` | 1.4 |
-| [ ] | M | 1.9 — Implementar `scripts/lib/ssh_audit.sh` + 3 testes unit (mock logger) | `bash` + `bats` | 1.4 |
-| [ ] | M | 1.10 — Refatorar `scripts/manage.sh` para invocar `lib/*.sh` mantendo comportamento legado (sem ainda dispatch async/namespaces — so estrutura) | `bash` + `bats` | 1.5–1.9 |
-| [ ] | P | 1.11 — Atualizar `scripts/deploy-server.sh` para `apt install -y jq redis-tools bats` e instalar `tests/` no server (somente smoke) | `bash` | — |
+| [x] | P | 1.1 — Validar `.github/workflows/bats.yml` (job unit + integration com service redis:7-alpine) | `bash` + GitHub Actions UI | — |
+| [x] | P | 1.2 — Validar `.github/workflows/shellcheck.yml` (severity=warning bloqueia, scandir scripts/+shared-services/+systemd/+ssh/) | `shellcheck` | — |
+| [x] | P | 1.3 — Validar `.github/workflows/contracts-check.yml` (extrai JSON Schemas + OpenAPI + drift gate OCC allowlist §3.10.1 vs `lib/occ_bridge.sh`) | `check-jsonschema` + `redocly` | — |
+| [x] | M | 1.4 — Estruturar `tests/` (helpers/setup.bash, helpers/redis_fixture.bash, estrutura unit/integration/e2e + Makefile alvo `make test`) | `bats` | — |
+| [x] | M | 1.5 — Implementar `scripts/lib/validators.sh` + 6 testes unit | `bash` + `bats` | 1.4 |
+| [x] | M | 1.6 — Implementar `scripts/lib/output_json.sh` + 5 testes unit | `bash` + `jq` + `bats` | 1.4 |
+| [x] | M | 1.7 — Implementar `scripts/lib/job_queue.sh` + 6 testes integration (Redis) | `bash` + `redis-cli` + `bats` | 1.4 |
+| [x] | M | 1.8 — Implementar `scripts/lib/job_runner.sh` + 4 testes unit (mock docker/redis) | `bash` + `bats` | 1.4 |
+| [x] | M | 1.9 — Implementar `scripts/lib/ssh_audit.sh` + 3 testes unit (mock logger) | `bash` + `bats` | 1.4 |
+| [x] | M | 1.10 — Refatorar `scripts/manage.sh` para invocar `lib/*.sh` mantendo comportamento legado (sem ainda dispatch async/namespaces — so estrutura) | `bash` + `bats` | 1.5–1.9 |
+| [~] | P | 1.11 — Atualizar `scripts/deploy-server.sh` para `apt install -y jq redis-tools bats` e instalar `tests/` no server (somente smoke) | `bash` | — | DEFERRED → D2 (F-D1-001) |
 
 **Notas tecnicas (tarefas M):**
 
