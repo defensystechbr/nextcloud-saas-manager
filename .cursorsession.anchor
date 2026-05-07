@@ -1,0 +1,37 @@
+{
+  "persona": "planejador-tarefas",
+  "phase": "Planejamento tecnico concluido — proximo passo: /pmo sprint D1 ou /jarvis pipeline (autopilot)",
+  "intent": "Planejar a implementacao da v12.0 (Bash + Docker Compose + Redis + systemd + Feature N/A/B/C/D/M/O/P) em 5 sprints D risk-first com gate executavel por sprint, executor_prompts autocontidos para tasks M, e auditoria autopilot (senior+qa default; comprehensive em D5).",
+  "changes_made": [
+    "Gerado docs/ROADMAP.md (2855 linhas) com 5 sprints D + 48 tarefas (22 P + 26 M) + 4 tasks critica:true (D2.1 manage-cli flags, D2.3 worker.sh, D3.1 occ_bridge::occ_run, D3.3 user-create) para Best-of-N.",
+    "Sprint D1 (foundation, 11 tasks): tests/helpers + lib/{validators,output_json,job_queue,job_runner,ssh_audit}.sh + manage.sh refactor preservando F01-F10 — review skip (sem mudanca de comportamento).",
+    "Sprint D2 (async core, 11 tasks): manage-cli flags+dispatch hibrido + idempotency + worker.sh daemon + ssh-gateway (ncsaas-api+shim+sudoers) + observability + queue-introspection (Q-1..Q-4) + AOF Redis — review senior+qa.",
+    "Sprint D3 (Feature O, 8 tasks): occ_bridge::occ_run real + inbox-staging (SFTP jail + GC) + user-group-apps (cmd_user_*, cmd_group_*, cmd_apps_*) + create estendido (--apps/--full-apps/--staging-id/--payload-stdin) + remove estendido (--force/--backup-first/--confirm) — review senior+qa, foco LGPD.",
+    "Sprint D4 (Feature P + hardening, 8 tasks): occ-exec public (consume occ_run) + client-lock wiring + health 8 checks paralelos + socket-proxy migrated + upgrade-harp + secrets-file — review senior+qa, foco seguranca.",
+    "Sprint D5 (estabilizacao, 10 tasks): ADRs ARCH-001..ARCH-008 + ADR-009..ADR-013 em DECISION-BRIEF.md + README v12.0 + E2E docker-in-docker + auditorias (qa, seguranca, dba, performance, senior) + deploy staging Tier 1 + tag v12.0 — review comprehensive.",
+    "Caminho critico de 12 tarefas sequenciais identificado: D1.5→D1.7→D1.8→D1.10→D2.1→D2.3→D3.1→D3.3→D4.1→D4.4→D5.3→D5.9.",
+    "Estrategia de auditoria registrada em metadata `review:` por sprint: D1 skip; D2..D4 senior+qa; D5 comprehensive.",
+    "Tech debt budget avaliado: 5 sprints D + 0 sprint dedicada → mitigacao via Sprint N1 pos-v12.0 (`/pmo new`) + auditorias D5 que identificam debt residual.",
+    "Boil-the-Lake: Sprint S2 original (9 modulos) decomposta em D2 + D3 + D4 a pedido do usuario para evitar oceano (>8 tasks por sprint).",
+    "Mapping de 15 modulos do .cursorsession para sprints: tests-bats/ci-shellcheck (D1), manage-cli (D1+D2), worker/ssh-gateway/idempotency/observability/queue-introspection (D2), inbox-staging/user-group-apps/occ-bridge P1 (D3), client-lock/health-command/socket-proxy/secrets-file/occ-bridge P2 (D4)."
+  ],
+  "decisions": {
+    "modo_execucao": "Autopilot — /jarvis pipeline ou /sprint-all executa D1→D5 sequencialmente; auditoria entre sprints e o unico gate; pipeline para na primeira sprint que falhar (sprint F automatico via /pmo fix).",
+    "audit_levels": "D1=skip (foundation refactor sem mudanca comportamento; smoke regressivo basta); D2=senior+qa (logica de negocio + seguranca); D3=senior+qa (LGPD + senha + SCP staging); D4=senior+qa (allowlist OCC + hardening); D5=comprehensive (pre-deploy: senior+qa+dba+performance+seguranca).",
+    "best_of_n": "4 tasks critica:true marcadas (D2.1, D2.3, D3.1, D3.3) — sub-agente pai spawna 2 implementadores em parallel worktrees e seleciona melhor por coverage + zero shellcheck warnings + LGPD compliance.",
+    "p_vs_m": "22 tarefas P (atomicas, 1 linha de descricao) + 26 tarefas M (executor_prompt completo); 0 tarefas G (proibido por planejador-tarefas regra).",
+    "sprint_count": "5 sprints D (D1-D5) ao inves dos 4 originalmente sugeridos em proximos_passos do .cursorsession — decomposicao S2 -> D2/D3 evita boil-the-lake (9 modulos seria oceano).",
+    "branch_strategy": "Trabalho em branch `development` (atual); ao fim de D5, merge para `main` + tag v12.0.",
+    "review_pipeline": "Pipeline /jarvis pipeline executa: spawn /sprint-init D<N> -> auditoria conforme metadata -> commit -> proxima sprint. Em caso de findings HIGH em auditoria: /pmo fix gera Sprint F automatica antes de prosseguir."
+  },
+  "next_steps": [
+    "Usuario aprova docs/ROADMAP.md (ou pede ajustes em sprint/task especifica).",
+    "Apos aprovacao: rodar `/pmo sprint D1` para iniciar manualmente, OU `/jarvis pipeline` / `/sprint-all` para autopilot completo (D1->D5).",
+    "Em D5: rodar capability `decision-brief` para registrar ADR-001..ADR-008 + ADR-009..ADR-013 em docs/DECISION-BRIEF.md.",
+    "Pos-v12.0: rodar `/pmo new` para Sprint N1 (tech debt residual + Feature E backup off-site se priorizada + observabilidade Loki/Prometheus se demandada).",
+    "Bloqueios para Sprint D2: Duvida #1 (URL API REST consumidora) + Duvida #2 (stack) — pode prosseguir com mocks, mas finalizar contratos com a API antes do deploy staging em D5.",
+    "Bloqueios para Sprint D3: politica de senha definida em CONTRACTS.md §9.2 (validar com DevOps antes de implementar D3.3).",
+    "Bloqueios para Sprint D4: allowlist OCC §3.10.1 revisada com DevOps + WORKER_OCC_TIMEOUT_SEC=60 validado em staging + Nextcloud ≥31 confirmado para group:rename."
+  ],
+  "updated_at": "2026-05-07T21:48:00Z"
+}
