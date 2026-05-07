@@ -1,0 +1,29 @@
+# ssh/authorized_keys.example
+# Modelo para ~ncsaas-api/.ssh/authorized_keys  (modo 0600, ncsaas-api:ncsaas-api)
+# Materializado a partir de docs/ARCHITECTURE.md Apêndice A.6 (canônico).
+#
+# Convenção:
+#   - Uma linha por chave (uma chave por API consumidora; rotação = nova linha).
+#   - TODOS os flags abaixo são obrigatórios. ABSENT command="..." = chave dá shell.
+#   - O comment final (`api-prod-2026`) ajuda na rotação e auditoria — formato
+#     livre, mas recomendado: `<ambiente>-<ano>` ou `<consumer>-<purpose>-<ano>`.
+#
+# Procedimento de instalação (root no servidor):
+#   useradd -r -m -d /home/ncsaas-api -s /usr/sbin/nologin ncsaas-api
+#   install -d -m 0700 -o ncsaas-api -g ncsaas-api /home/ncsaas-api/.ssh
+#   install -m 0600 -o ncsaas-api -g ncsaas-api /dev/null /home/ncsaas-api/.ssh/authorized_keys
+#   $EDITOR /home/ncsaas-api/.ssh/authorized_keys     # cole abaixo
+#
+# Rotação:
+#   1. Adicione nova linha com novo comment (mantém antiga ativa).
+#   2. Faça API consumidora trocar para nova chave.
+#   3. Após confirmação, comente (ou remova) a linha antiga.
+#   4. Audit log em journald (tag ncsaas-api-ssh) registra `key_id` SHA256 — use
+#      para confirmar que a chave antiga deixou de ser usada antes de remover.
+
+# ─── EXEMPLO (substitua AAAAC3...key... pela chave pública real) ───────────────
+command="/usr/local/bin/ncsaas-api-shim",no-pty,no-port-forwarding,no-X11-forwarding,no-agent-forwarding,no-user-rc ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI...key... api-prod-2026
+
+# ─── Para upload via SCP/SFTP (Feature O.5 staging) ───────────────────────────
+# A MESMA chave acima funciona — o sshd separa subsystem sftp via Match (drop-in 51).
+# Não é necessária linha extra; o cliente decide entre `ssh` e `sftp`/`scp`.

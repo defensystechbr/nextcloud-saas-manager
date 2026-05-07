@@ -1,0 +1,62 @@
+name: shellcheck
+
+on:
+  push:
+    branches: [main, development]
+    paths:
+      - "scripts/**/*.sh"
+      - "shared-services/**/*.sh"
+      - "systemd/**"
+      - "ssh/**"
+      - ".github/workflows/shellcheck.yml"
+  pull_request:
+    branches: [main, development]
+    paths:
+      - "scripts/**/*.sh"
+      - "shared-services/**/*.sh"
+      - "systemd/**"
+      - "ssh/**"
+      - ".github/workflows/shellcheck.yml"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  shellcheck:
+    name: ShellCheck (severity=warning blocks)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run ShellCheck
+        # ARCHITECTURE.md §2 / §10 ci-shellcheck: severity=warning bloqueia.
+        # tests/ excluído (Bats tem regras próprias e gera falsos positivos).
+        uses: ludeeus/action-shellcheck@2.0.0
+        env:
+          SHELLCHECK_OPTS: "--severity=warning --shell=bash --external-sources"
+        with:
+          severity: warning
+          scandir: "."
+          ignore_paths: >-
+            tests
+            .git
+            docs
+          additional_files: >-
+            scripts/deploy-server.sh
+            scripts/manage.sh
+
+      - name: Lint sudoers / sshd snippets (informational only)
+        if: always()
+        run: |
+          set -eu
+          if [ -d ssh ]; then
+            for f in ssh/*.sshd.conf ssh/*.sudoers; do
+              [ -e "$f" ] || continue
+              echo "::group::Inspect $f"
+              cat "$f"
+              echo "::endgroup::"
+            done
+          fi

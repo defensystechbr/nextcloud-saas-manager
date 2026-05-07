@@ -1,0 +1,18 @@
+# systemd/nextcloud-saas-jobs-gc.timer
+# Materializado a partir de docs/ARCHITECTURE.md Apêndice A.3 (canônico).
+# Instalado por scripts/deploy-server.sh em /etc/systemd/system/.
+
+[Unit]
+Description=Nextcloud SaaS Manager — GC de logs de jobs (>30 dias) e inbox SFTP (>24h órfãos)
+Documentation=file:/opt/nextcloud-customers/docs/ARCHITECTURE.md
+
+[Timer]
+# Roda diariamente; Persistent=true cobre boot pós-downtime.
+OnCalendar=daily
+Persistent=true
+# Espalha em até 1h para evitar pico cron-like se houver outros timers daily.
+RandomizedDelaySec=1h
+Unit=nextcloud-saas-jobs-gc.service
+
+[Install]
+WantedBy=timers.target

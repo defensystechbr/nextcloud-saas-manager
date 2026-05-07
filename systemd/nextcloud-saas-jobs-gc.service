@@ -1,0 +1,34 @@
+# systemd/nextcloud-saas-jobs-gc.service
+# Materializado a partir de docs/ARCHITECTURE.md Apêndice A.3 (canônico).
+# Disparado por nextcloud-saas-jobs-gc.timer (oneshot diário).
+
+[Unit]
+Description=Limpa /opt/nextcloud-customers/jobs/*.log com mtime > 30 dias e inbox SFTP órfãos > 24h
+Documentation=file:/opt/nextcloud-customers/docs/ARCHITECTURE.md
+After=network.target
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+
+# 1. Job logs: 30 dias rotineiros + 90 dias compactados (.log.gz)
+ExecStart=/usr/bin/find /opt/nextcloud-customers/jobs -maxdepth 1 -type f -name '*.log' -mtime +30 -delete
+ExecStartPost=/usr/bin/find /opt/nextcloud-customers/jobs -maxdepth 1 -type f -name '*.log.gz' -mtime +90 -delete
+
+# 2. Inbox SFTP staging (Feature O.5): órfãos >24h sem job referenciado.
+#    A varredura é conservadora (só remove dirs vazios mais antigos que 24h).
+#    Diretórios com arquivos são mantidos — operação manual identifica órfãos
+#    consultando nc:inbox:<staging-id> no Redis (ARCHITECTURE §10 inbox-staging).
+ExecStartPost=/usr/bin/find /opt/nextcloud-customers/inbox -mindepth 1 -maxdepth 1 -type d -empty -mtime +1 -delete
+
+# 3. Hardening básico
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/opt/nextcloud-customers/jobs /opt/nextcloud-customers/inbox
+PrivateTmp=true
+NoNewPrivileges=true
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=nextcloud-saas-jobs-gc

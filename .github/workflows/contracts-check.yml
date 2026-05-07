@@ -1,0 +1,190 @@
+name: contracts-check
+
+# Drift gate: docs/CONTRACTS.md (revisão 0.3, 10 seções) é fonte da verdade.
+# Bloqueia merge se:
+#   1. JSON Schemas em §4 não parseiam (jsonschema CLI valida).
+#   2. OpenAPI 3.0.3 do callback HMAC em §5 falha lint.
+#   3. OCC-allowlist canônica de §3.10.1 difere do array OCC_ALLOWLIST em scripts/lib/occ_bridge.sh.
+
+on:
+  push:
+    branches: [main, development]
+    paths:
+      - "docs/CONTRACTS.md"
+      - "scripts/lib/occ_bridge.sh"
+      - ".github/workflows/contracts-check.yml"
+  pull_request:
+    branches: [main, development]
+    paths:
+      - "docs/CONTRACTS.md"
+      - "scripts/lib/occ_bridge.sh"
+      - ".github/workflows/contracts-check.yml"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  extract-and-validate:
+    name: Extract fenced JSON/YAML + validate schemas
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install tooling
+        run: |
+          set -eu
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends jq python3-pip nodejs npm
+          python3 -m pip install --quiet --user "check-jsonschema==0.30.0"
+          npm i --global --silent @redocly/cli@1.25.11
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Extract fenced JSON Schema blocks from docs/CONTRACTS.md
+        # Cada bloco ```json com "$schema" ou "$id" vira arquivo em /tmp/schemas.
+        run: |
+          set -eu
+          mkdir -p /tmp/schemas
+          python3 - <<'PY'
+          import os
+          import re
+          from pathlib import Path
+
+          src = Path("docs/CONTRACTS.md").read_text(encoding="utf-8")
+          fenced = re.findall(r"```json\s*\n(.*?)\n```", src, re.DOTALL)
+          ok, total = 0, 0
+          for i, body in enumerate(fenced):
+              body = body.strip()
+              if not body.startswith("{"):
+                  continue
+              if '"$schema"' not in body and '"$id"' not in body:
+                  continue
+              total += 1
+              path = Path(f"/tmp/schemas/schema-{i:03d}.json")
+              try:
+                  import json as _json
+                  _json.loads(body)
+                  path.write_text(body, encoding="utf-8")
+                  ok += 1
+              except Exception as exc:
+                  print(f"::error::JSON Schema #{i} (lines around) inválido: {exc}")
+          print(f"::notice::JSON Schemas extraídos com sucesso: {ok}/{total}")
+          if total and ok != total:
+              raise SystemExit(1)
+          PY
+
+      - name: Validate JSON Schemas (meta-schema Draft 2020-12)
+        run: |
+          set -eu
+          shopt -s nullglob
+          files=(/tmp/schemas/*.json)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "::warning::Nenhum JSON Schema fenced em CONTRACTS.md (esperado pelo menos 4 — §4.1..§4.7)."
+            exit 0
+          fi
+          check-jsonschema --check-metaschema "${files[@]}"
+
+      - name: Extract OpenAPI block from §5 of docs/CONTRACTS.md
+        run: |
+          set -eu
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+
+          src = Path("docs/CONTRACTS.md").read_text(encoding="utf-8")
+          m = re.search(r"```yaml\s*\n(openapi:[^\n]*\n.*?)\n```", src, re.DOTALL)
+          if not m:
+              print("::warning::Bloco OpenAPI não encontrado em CONTRACTS.md §5 — pulando lint.")
+              raise SystemExit(0)
+          Path("/tmp/callback.openapi.yaml").write_text(m.group(1), encoding="utf-8")
+          print("::notice::OpenAPI extraído para /tmp/callback.openapi.yaml")
+          PY
+
+      - name: Lint OpenAPI (Redocly)
+        run: |
+          set -eu
+          if [ -f /tmp/callback.openapi.yaml ]; then
+            redocly lint /tmp/callback.openapi.yaml --skip-rule no-empty-servers --skip-rule no-server-example.com
+          else
+            echo "::notice::Sem OpenAPI a lintar."
+          fi
+
+  occ-allowlist-drift:
+    name: OCC-allowlist (§3.10.1) bate com lib/occ_bridge.sh
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Compare allowlist contract vs implementation
+        run: |
+          set -eu
+
+          # Extrai a tabela markdown "| <subcmd> |" da seção §3.10.1 de CONTRACTS.md.
+          # Heurística robusta: pega tudo entre o anchor "### 3.10.1" e o próximo "### 3.10.2"
+          # (ou próximo "## "), e dali extrai o primeiro token monospace `<subcmd>`.
+          python3 - <<'PY'
+          import re
+          import sys
+          from pathlib import Path
+
+          src = Path("docs/CONTRACTS.md").read_text(encoding="utf-8")
+
+          # Encontra a seção 3.10.1 (allowlist canônica)
+          m = re.search(
+              r"### 3\.10\.1[^\n]*\n(.*?)(?=\n### |\n## |\Z)",
+              src, re.DOTALL,
+          )
+          if not m:
+              print("::warning::§3.10.1 não encontrada em CONTRACTS.md — pulando drift check.")
+              sys.exit(0)
+          section = m.group(1)
+
+          # Coleta tokens em backtick na primeira coluna de cada linha de tabela markdown.
+          # Padrão tolerante: "| `subcmd:foo` | ..."
+          contract_subs = []
+          for line in section.splitlines():
+              line = line.strip()
+              if not line.startswith("|"):
+                  continue
+              cells = [c.strip() for c in line.strip("|").split("|")]
+              if not cells or not cells[0]:
+                  continue
+              token_match = re.match(r"`([a-z][a-z0-9:_\-]+)`", cells[0])
+              if token_match:
+                  contract_subs.append(token_match.group(1))
+
+          contract_set = sorted(set(contract_subs))
+          print(f"::notice::CONTRACTS §3.10.1 declara {len(contract_set)} subcomandos.")
+
+          # Lê implementation
+          impl_path = Path("scripts/lib/occ_bridge.sh")
+          if not impl_path.exists():
+              print("::warning::scripts/lib/occ_bridge.sh ausente — esperado em Sprint S1 skeleton.")
+              sys.exit(0)
+          impl = impl_path.read_text(encoding="utf-8")
+
+          # Captura array OCC_ALLOWLIST=( "a" "b" ... ) (multi-linha)
+          arr_match = re.search(r"OCC_ALLOWLIST=\(\s*(.*?)\s*\)", impl, re.DOTALL)
+          if not arr_match:
+              print("::error::OCC_ALLOWLIST=( ... ) não encontrado em scripts/lib/occ_bridge.sh.")
+              sys.exit(1)
+          impl_subs = re.findall(r'"([^"\s]+)"', arr_match.group(1))
+          impl_set = sorted(set(impl_subs))
+          print(f"::notice::lib/occ_bridge.sh declara {len(impl_set)} subcomandos.")
+
+          missing_in_impl = [s for s in contract_set if s not in impl_set]
+          extra_in_impl = [s for s in impl_set if s not in contract_set]
+
+          if missing_in_impl or extra_in_impl:
+              if missing_in_impl:
+                  print(f"::error::Faltam em lib/occ_bridge.sh: {missing_in_impl}")
+              if extra_in_impl:
+                  print(f"::error::Extras em lib/occ_bridge.sh (não estão em §3.10.1): {extra_in_impl}")
+              sys.exit(1)
+
+          print("OK: OCC-allowlist sincronizada entre CONTRACTS.md §3.10.1 e lib/occ_bridge.sh.")
+          PY
