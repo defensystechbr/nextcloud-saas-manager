@@ -265,7 +265,7 @@
     "ARCH-007",
     "ARCH-008"
   ],
-  "sprint_atual": null,
+  "sprint_atual": "D1",
   "comandos_recentes": [
     "/pmo novo",
     "/analista planejar",
@@ -577,9 +577,9 @@
       "D5"
     ],
     "started_at": "2026-05-07T22:37:00Z",
-    "completed_sprints": [],
-    "hard_stops": [],
-    "current_sprint": "D1"
+      "completed_sprints": ["D1"],
+      "hard_stops": [],
+      "current_sprint": "D2"
   },
   "active_automation": "pipeline"
 }

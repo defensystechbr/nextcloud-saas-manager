@@ -1,0 +1,8 @@
+#!/bin/bash
+# tests/fixtures/redis-cli — Mock de redis-cli para testes unit (sem Redis real)
+# Comportamento controlado via:
+#   REDIS_CLI_FAKE_OUTPUT  — stdout
+#   REDIS_CLI_FAKE_EXIT    — exit code (default: 0)
+
+echo "${REDIS_CLI_FAKE_OUTPUT:-}"
+exit "${REDIS_CLI_FAKE_EXIT:-0}"

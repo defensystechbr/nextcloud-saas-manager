@@ -1,0 +1,355 @@
+#!/bin/bash
+# scripts/lib/job_queue.sh — Operações sobre a fila de jobs Redis
+# dbindex 16 (ARCH-001, CONTRACTS §6.1). Prefixo nc: em todas as chaves.
+# NUNCA usar KEYS nc:jobs:* — sempre SCAN MATCH ... COUNT 1000.
+# Source guard
+[ "${JOB_QUEUE_SH_SOURCED:-0}" = "1" ] && return 0
+readonly JOB_QUEUE_SH_SOURCED=1
+
+set -euo pipefail
+
+# Dependências
+# shellcheck source=scripts/lib/validators.sh
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/validators.sh"
+
+# ============================================================
+# Configuração Redis — via env vars (sem state interno)
+# ============================================================
+# WORKER_REDIS_HOST    (default: 127.0.0.1)
+# WORKER_REDIS_PORT    (default: 6379)
+# WORKER_REDIS_DB      (default: 16)
+# WORKER_REDIS_PASS    (optional)
+
+_redis_cli() {
+  local host="${WORKER_REDIS_HOST:-127.0.0.1}"
+  local port="${WORKER_REDIS_PORT:-6379}"
+  local db="${WORKER_REDIS_DB:-16}"
+  local pass="${WORKER_REDIS_PASS:-}"
+
+  local args=(-h "$host" -p "$port" -n "$db" --no-raw)
+  [[ -n "$pass" ]] && args+=(-a "$pass")
+
+  redis-cli "${args[@]}" "$@"
+}
+
+# ============================================================
+# enqueue <job_id> <hash_key1> <hash_value1> ...
+# Armazena hash nc:jobs:<id> + LPUSH nc:jobs:queue <id>
+# Valida que job_id é UUID v4 antes de tocar Redis.
+# ============================================================
+enqueue() {
+  local job_id="${1:?enqueue: job_id obrigatorio}"
+  shift
+
+  if ! is_valid_uuid_v4 "$job_id"; then
+    echo "enqueue: job_id deve ser UUID v4 lowercase: ${job_id}" >&2
+    return 1
+  fi
+
+  local key="nc:jobs:${job_id}"
+
+  # Construir HSET com todos os pares
+  local hset_args=("HSET" "$key")
+  while [[ $# -ge 2 ]]; do
+    hset_args+=("$1" "$2")
+    shift 2
+  done
+
+  _redis_cli "${hset_args[@]}" >/dev/null
+  _redis_cli LPUSH "nc:jobs:queue" "$job_id" >/dev/null
+}
+
+# ============================================================
+# set_state <job_id> <state> [extra_key extra_value ...]
+# Atualiza estado + timestamps. EXPIRE 604800 (7d) quando finished/failed/cancelled.
+# ============================================================
+set_state() {
+  local job_id="${1:?set_state: job_id obrigatorio}"
+  local state="${2:?set_state: state obrigatorio}"
+  shift 2
+
+  local key="nc:jobs:${job_id}"
+  local ts
+  ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+  local hset_args=("HSET" "$key" "state" "$state")
+
+  case "$state" in
+    queued)    hset_args+=("queued_at" "$ts") ;;
+    running)   hset_args+=("started_at" "$ts") ;;
+    finished)  hset_args+=("finished_at" "$ts") ;;
+    failed)    hset_args+=("failed_at" "$ts") ;;
+    cancelled) hset_args+=("cancelled_at" "$ts") ;;
+  esac
+
+  # Extras (k/v pares)
+  while [[ $# -ge 2 ]]; do
+    hset_args+=("$1" "$2")
+    shift 2
+  done
+
+  _redis_cli "${hset_args[@]}" >/dev/null
+
+  # EXPIRE ao encerrar
+  case "$state" in
+    finished|failed|cancelled)
+      _redis_cli EXPIRE "$key" 604800 >/dev/null
+      ;;
+  esac
+}
+
+# ============================================================
+# get_state <job_id>
+# Retorna JSON com todos os campos do hash.
+# ============================================================
+get_state() {
+  local job_id="${1:?get_state: job_id obrigatorio}"
+  local key="nc:jobs:${job_id}"
+
+  local raw
+  raw="$(_redis_cli HGETALL "$key" 2>/dev/null)"
+
+  if [[ -z "$raw" ]]; then
+    echo "{}"
+    return 0
+  fi
+
+  # HGETALL retorna alternando field\nvalue (com --no-raw, separados por newline)
+  echo "$raw" | awk '
+    BEGIN { printf "{"; first=1 }
+    NR % 2 == 1 { key=$0 }
+    NR % 2 == 0 {
+      if (!first) printf ","
+      printf "\"" key "\":\"" $0 "\""
+      first=0
+    }
+    END { printf "}" }
+  ' | jq -c .
+}
+
+# ============================================================
+# idem_check <key> <args_hash>
+# SET nc:idem:<key> <job_id>:<args_hash> NX EX 86400
+# Retorna: new|same|conflict|invalid
+# ============================================================
+idem_check() {
+  local idem_key="${1:?idem_check: key obrigatorio}"
+  local args_hash="${2:?idem_check: args_hash obrigatorio}"
+  local job_id
+
+  if ! is_valid_uuid_v4 "$idem_key" 2>/dev/null; then
+    echo "invalid"
+    return 0
+  fi
+
+  local redis_key="nc:idem:${idem_key}"
+  local new_val="${args_hash}"
+
+  # Tenta SET NX
+  local result
+  result="$(_redis_cli SET "$redis_key" "$new_val" NX EX 86400 2>/dev/null)"
+
+  if [[ "$result" == "OK" ]]; then
+    echo "new"
+    return 0
+  fi
+
+  # Já existe — ler valor atual
+  local existing
+  existing="$(_redis_cli GET "$redis_key" 2>/dev/null)"
+
+  if [[ "$existing" == "$args_hash" ]]; then
+    echo "same"
+  else
+    echo "conflict"
+  fi
+}
+
+# ============================================================
+# idem_lookup <key>
+# Retorna: <args_hash> ou vazio se não existir
+# ============================================================
+idem_lookup() {
+  local idem_key="${1:?idem_lookup: key obrigatorio}"
+  local redis_key="nc:idem:${idem_key}"
+  _redis_cli GET "$redis_key" 2>/dev/null || echo ""
+}
+
+# ============================================================
+# dequeue
+# BRPOP nc:jobs:queue <timeout> (0 = block indefinidamente)
+# Retorna job_id ou string vazia se timeout/SIGTERM
+# ============================================================
+dequeue() {
+  local timeout="${1:-0}"
+  local result
+  result="$(_redis_cli BRPOP "nc:jobs:queue" "$timeout" 2>/dev/null)" || true
+
+  if [[ -z "$result" ]]; then
+    echo ""
+    return 0
+  fi
+
+  # BRPOP retorna "nc:jobs:queue\n<job_id>" com --no-raw
+  echo "$result" | awk 'NR==2{print $0}'
+}
+
+# ============================================================
+# client_lock_acquire <client> [ttl_sec]
+# SET nc:client_lock:<client> <pid> NX EX <ttl>
+# Retorna: 0=adquirido, 1=já bloqueado
+# ============================================================
+client_lock_acquire() {
+  local client="${1:?client_lock_acquire: client obrigatorio}"
+  local ttl="${2:-5}"
+  local redis_key="nc:client_lock:${client}"
+  local pid="$$"
+
+  local result
+  result="$(_redis_cli SET "$redis_key" "$pid" NX EX "$ttl" 2>/dev/null)"
+  [[ "$result" == "OK" ]]
+}
+
+# ============================================================
+# client_lock_release <client>
+# DEL nc:client_lock:<client> apenas se pid bate (Lua atômica)
+# ============================================================
+client_lock_release() {
+  local client="${1:?client_lock_release: client obrigatorio}"
+  local redis_key="nc:client_lock:${client}"
+  local pid="$$"
+
+  # Lua: deletar apenas se valor == pid atual (evita liberar lock alheio)
+  local lua_script='if redis.call("GET", KEYS[1]) == ARGV[1] then return redis.call("DEL", KEYS[1]) else return 0 end'
+  _redis_cli EVAL "$lua_script" 1 "$redis_key" "$pid" >/dev/null 2>&1 || true
+}
+
+# ============================================================
+# client_lock_renew <client>
+# EXPIRE nc:client_lock:<client> 5
+# ============================================================
+client_lock_renew() {
+  local client="${1:?client_lock_renew: client obrigatorio}"
+  local redis_key="nc:client_lock:${client}"
+  _redis_cli EXPIRE "$redis_key" 5 >/dev/null 2>&1 || true
+}
+
+# ============================================================
+# worker_lock_acquire <pid>
+# SET nc:worker:lock <pid> NX EX 60
+# ============================================================
+worker_lock_acquire() {
+  local pid="${1:?worker_lock_acquire: pid obrigatorio}"
+  local result
+  result="$(_redis_cli SET "nc:worker:lock" "$pid" NX EX 60 2>/dev/null)"
+  [[ "$result" == "OK" ]]
+}
+
+# ============================================================
+# worker_lock_renew <pid>
+# Renova lock apenas se pid bate (Lua atômica).
+# Retorna 0=ok, 1=pid errado (lock alienado)
+# ============================================================
+worker_lock_renew() {
+  local pid="${1:?worker_lock_renew: pid obrigatorio}"
+  local lua_script='if redis.call("GET", KEYS[1]) == ARGV[1] then return redis.call("EXPIRE", KEYS[1], 60) else return redis.call("error", "pid_mismatch") end'
+
+  local result
+  result="$(_redis_cli EVAL "$lua_script" 1 "nc:worker:lock" "$pid" 2>&1)"
+  if [[ "$result" == *"pid_mismatch"* || "$result" == *"ERR"* ]]; then
+    return 1
+  fi
+  return 0
+}
+
+# ============================================================
+# worker_status
+# Retorna JSON: queue_depth, current_job, jobs_today, last_failure
+# ============================================================
+worker_status() {
+  local queue_depth
+  queue_depth="$(_redis_cli LLEN "nc:jobs:queue" 2>/dev/null || echo 0)"
+  # Trim whitespace
+  queue_depth="${queue_depth// /}"
+
+  local current_job=""
+  current_job="$(_redis_cli GET "nc:worker:current_job" 2>/dev/null || echo "")"
+
+  emit_json \
+    queue_depth "@number:${queue_depth:-0}" \
+    current_job "${current_job:-null}" \
+    jobs_today "@number:0" \
+    last_failure ""
+}
+
+# ============================================================
+# job_list <state_filter> <client_filter> <cmd_filter> <limit> <offset>
+# Usa SCAN MATCH nc:jobs:* COUNT 1000 (nunca KEYS).
+# Retorna array JSON de jobs filtrados.
+# ============================================================
+job_list() {
+  local state_filter="${1:-}"
+  local client_filter="${2:-}"
+  local cmd_filter="${3:-}"
+  local limit="${4:-20}"
+  local offset="${5:-0}"
+
+  local cursor=0
+  local results=()
+  local scanned=0
+
+  while true; do
+    local scan_result
+    scan_result="$(_redis_cli SCAN "$cursor" MATCH "nc:jobs:*" COUNT 1000 2>/dev/null)"
+
+    local new_cursor
+    new_cursor="$(echo "$scan_result" | head -1 | tr -d ' ')"
+    local keys
+    keys="$(echo "$scan_result" | tail -n +2)"
+
+    while IFS= read -r key; do
+      [[ -z "$key" ]] && continue
+      # Excluir nc:jobs:queue (lista, não hash)
+      [[ "$key" == "nc:jobs:queue" ]] && continue
+
+      local job_id="${key#nc:jobs:}"
+
+      # Ler campos relevantes para filtragem
+      local state cmd client
+      state="$(_redis_cli HGET "$key" state 2>/dev/null || echo "")"
+      cmd="$(_redis_cli HGET "$key" cmd 2>/dev/null || echo "")"
+      client="$(_redis_cli HGET "$key" client 2>/dev/null || echo "")"
+
+      # Filtrar
+      [[ -n "$state_filter"  && "$state"  != "$state_filter"  ]] && continue
+      [[ -n "$client_filter" && "$client" != "$client_filter" ]] && continue
+      [[ -n "$cmd_filter"    && "$cmd"    != "$cmd_filter"    ]] && continue
+
+      results+=("$job_id")
+    done <<< "$keys"
+
+    [[ "$new_cursor" == "0" ]] && break
+    cursor="$new_cursor"
+  done
+
+  # Paginação por offset/limit
+  local total="${#results[@]}"
+  local page=()
+  local i="$offset"
+  while [[ $i -lt $total && ${#page[@]} -lt $limit ]]; do
+    page+=("${results[$i]}")
+    i=$((i + 1))
+  done
+
+  # Serializar como array JSON
+  local json="["
+  local first=1
+  for jid in "${page[@]}"; do
+    [[ $first -eq 0 ]] && json+=","
+    json+="\"${jid}\""
+    first=0
+  done
+  json+="]"
+  echo "$json"
+}
