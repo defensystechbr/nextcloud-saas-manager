@@ -184,6 +184,15 @@ dispatch_namespace_cmd() {
     return 5
   fi
 
+  if [[ "$namespace" == "occ-exec" ]]; then
+    if declare -f cmd_occ_exec >/dev/null 2>&1; then
+      cmd_occ_exec "$client" "$verb" "$@"
+      return $?
+    fi
+    emit_error "not_implemented_yet" "namespace 'occ-exec' sera implementado em D4"
+    return 99
+  fi
+
   local handler="cmd_${namespace//-/_}_${verb//-/_}"
 
   if declare -f "$handler" >/dev/null 2>&1; then

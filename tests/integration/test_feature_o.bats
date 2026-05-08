@@ -228,9 +228,9 @@ teardown() {
   [ "$status" -eq 17 ]
 }
 
-# ─── 20. namespace dispatch: occ-exec retorna not_implemented_yet (D4) ───────
-@test "occ-exec: retorna not_implemented_yet (implementado em D4)" {
+# ─── 20. namespace dispatch: occ-exec sync-only (D4) ───────────────────────
+@test "occ-exec: rejeita --async (sync only)" {
   run bash "$MANAGE" acme occ-exec user:list --async --json
-  [ "$status" -eq 99 ]
-  [[ "$output" == *"not_implemented_yet"* ]]
+  [ "$status" -eq 5 ]
+  [[ "$output" == *"async_not_supported"* ]]
 }

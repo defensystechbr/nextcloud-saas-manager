@@ -36,6 +36,8 @@ source "${MANAGE_SCRIPT_DIR}/lib/feature_o.sh"
 source "${MANAGE_SCRIPT_DIR}/lib/feature_o_ext.sh"
 # shellcheck source=scripts/lib/occ_bridge.sh
 source "${MANAGE_SCRIPT_DIR}/lib/occ_bridge.sh"
+# shellcheck source=scripts/lib/health_checks.sh
+source "${MANAGE_SCRIPT_DIR}/lib/health_checks.sh"
 
 # ============================================================
 # CONFIGURAÇÃO GLOBAL
@@ -175,9 +177,10 @@ services:
     image: ghcr.io/nextcloud/nextcloud-appapi-harp:release
     container_name: ${CLIENT_NAME}-harp
     restart: always
+    environment:
+      - DOCKER_HOST=tcp://shared-socket-proxy:2375
     volumes:
       - ./harp-certs:/certs
-      - /var/run/docker.sock:/var/run/docker.sock
     networks:
       - shared
 
@@ -558,6 +561,111 @@ cmd_backup_then_remove() {
 }
 
 # ============================================================
+# COMANDO: OCC-EXEC (Feature P)
+# ============================================================
+cmd_occ_exec() {
+    local CLIENT_NAME="$1"
+    local SUBCMD="$2"
+    shift 2
+    local -a OCC_ARGS=("$@")
+
+    if [[ "${PARSED_FLAGS[async]:-}" == "1" ]]; then
+        emit_error "async_not_supported" "occ-exec e sempre sincronico" >&2
+        return 5
+    fi
+
+    case "$SUBCMD" in
+        user:add|user:resetpassword)
+            if [[ "${PARSED_FLAGS[payload_stdin]:-}" != "1" ]]; then
+                emit_error "payload_stdin_required" "occ-exec ${SUBCMD} requer --payload-stdin com password" >&2
+                return 5
+            fi
+            local payload password
+            payload="$(cat)"
+            password="$(printf '%s' "$payload" | jq -r '.password // empty' 2>/dev/null || true)"
+            if [[ -z "$password" ]]; then
+                emit_error "payload_password_required" "payload JSON deve conter password" >&2
+                return 5
+            fi
+            export NEXTCLOUD_USER_PASSWORD="$password"
+            ;;
+    esac
+
+    local rc=0
+    if occ_run "$CLIENT_NAME" "$SUBCMD" "${OCC_ARGS[@]+"${OCC_ARGS[@]}"}"; then
+        rc=0
+    else
+        rc=$?
+    fi
+    unset NEXTCLOUD_USER_PASSWORD
+    return "$rc"
+}
+
+# ============================================================
+# COMANDO: HEALTH (Feature C/D4)
+# ============================================================
+cmd_health() {
+    local result
+    result="$(run_health_checks_json)"
+    if [[ "${PARSED_FLAGS[json]:-}" == "1" ]]; then
+        echo "$result"
+    else
+        echo ""
+        echo "=== Nextcloud SaaS Health ==="
+        echo "$result" | jq -r '.checks[] | "  [" + .status + "] " + .name + ": " + .message + " (" + (.duration_ms|tostring) + "ms)"'
+        echo "$result" | jq -r '"Summary: ok=\(.summary.ok) warn=\(.summary.warn) fail=\(.summary.fail)"'
+        echo ""
+    fi
+    local fail_count warn_count
+    fail_count="$(echo "$result" | jq -r '.summary.fail')"
+    warn_count="$(echo "$result" | jq -r '.summary.warn')"
+    (( fail_count > 0 )) && return 2
+    (( warn_count > 0 )) && return 1
+    return 0
+}
+
+# ============================================================
+# COMANDO: UPGRADE-HARP (Feature M/D4)
+# ============================================================
+cmd_upgrade_harp() {
+    local CLIENT_NAME="$1"
+    local client_dir="${BASE_DIR}/${CLIENT_NAME}"
+    local compose_file="${client_dir}/docker-compose.yml"
+
+    if [[ ! -f "$compose_file" ]]; then
+        emit_error "client_not_found" "docker-compose.yml nao encontrado para '${CLIENT_NAME}'" >&2
+        return 1
+    fi
+
+    python3 - "$compose_file" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text()
+text = text.replace("      - /var/run/docker.sock:/var/run/docker.sock\n", "")
+marker = "    restart: always\n"
+replacement = "    restart: always\n    environment:\n      - DOCKER_HOST=tcp://shared-socket-proxy:2375\n"
+if "container_name:" in text and "DOCKER_HOST=tcp://shared-socket-proxy:2375" not in text:
+    # Apply only to the harp service block by splitting around its service key.
+    before, sep, after = text.partition("  harp:\n")
+    if sep:
+        block, tail_sep, tail = after.partition("\n\nnetworks:")
+        block = block.replace(marker, replacement, 1)
+        text = before + sep + block + tail_sep + tail
+path.write_text(text)
+PY
+
+    if [[ "${PARSED_FLAGS[dry_run]:-}" == "1" ]]; then
+        emit_json operation "upgrade-harp" client "$CLIENT_NAME" dry_run "@bool:true" status "planned"
+        return 0
+    fi
+
+    (cd "$client_dir" && $DC up -d harp) >/dev/null
+    emit_json operation "upgrade-harp" client "$CLIENT_NAME" status "updated"
+}
+
+# ============================================================
 # COMANDO: LIST
 # ============================================================
 cmd_list() {
@@ -651,6 +759,8 @@ usage() {
     echo "  $(basename "$0") job <id> logs                  Logs de um job"
     echo "  $(basename "$0") job <id> cancel                Cancelar job em fila"
     echo "  $(basename "$0") job list [--state=...] [--client=...] [--cmd=...] [--limit=N] [--offset=N]"
+    echo "  $(basename "$0") health [--json]                 Health consolidado"
+    echo "  $(basename "$0") upgrade-harp <cliente>          Migrar HaRP para socket-proxy"
     echo ""
     echo "Flags globais: --async --json --dry-run --idempotency-key=<uuid> --callback=<url>"
     echo "               --confirm=<client> --payload-stdin --strict --staging-id=<uuid>"
@@ -866,6 +976,16 @@ case "$TOKEN0" in
         ;;
     shared-status)
         cmd_shared_status
+        ;;
+    health)
+        cmd_health
+        ;;
+    upgrade-harp)
+        if [[ -z "$TOKEN1" ]]; then
+            emit_error "missing_client" "upgrade-harp requer cliente" >&2
+            exit 5
+        fi
+        cmd_upgrade_harp "$TOKEN1"
         ;;
     ""|help|-h|--help)
         usage

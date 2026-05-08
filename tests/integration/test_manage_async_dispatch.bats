@@ -77,10 +77,30 @@ teardown() {
   [[ "$output" == *"apps-enable"* ]]
 }
 
-@test "namespace occ-exec: retorna not_implemented_yet (exit 99)" {
+@test "namespace occ-exec: executa occ_run publico (D4)" {
+  local mock_dir="${BATS_TEST_TMPDIR}/mock-occ"
+  mkdir -p "$mock_dir"
+  cat > "${mock_dir}/docker" <<'MOCK'
+#!/bin/bash
+if [[ "$1" == "compose" && "$2" == "version" ]]; then
+  echo "Docker Compose version v2"
+  exit 0
+fi
+if [[ "$1" == "inspect" ]]; then
+  echo "true"
+  exit 0
+fi
+if [[ "$1" == "exec" ]]; then
+  echo '{"users":[]}'
+  exit 0
+fi
+exit 0
+MOCK
+  chmod +x "${mock_dir}/docker"
+  export PATH="${mock_dir}:${PATH}"
   run bash "$MANAGE" acme occ-exec user:list --json
-  [ "$status" -eq 99 ]
-  [[ "$output" == *"not_implemented_yet"* ]]
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"occ_command":"user:list"'* ]]
 }
 
 # ─── 3. Dispatch async: enqueue path ───────────────────────

@@ -306,6 +306,40 @@ journalctl -t nextcloud-saas-worker -o json | jq .
 journalctl -t nextcloud-saas-occ-exec -o json | jq .
 ```
 
+### OCC Exec Sync (Feature P)
+
+Use `occ-exec` para executar apenas subcomandos OCC allowlisted com timeout curto:
+
+```bash
+nextcloud-manage acme occ-exec user:list --json
+nextcloud-manage acme occ-exec app:enable calendar --json
+printf '{"password":"..."}' | nextcloud-manage acme occ-exec user:add john --payload-stdin --json
+```
+
+Regras operacionais:
+- `occ-exec` e sempre sincrono; `--async`, `--callback` e `--idempotency-key` retornam erro.
+- Subcomandos mutaveis pegam `client-lock`; se o worker async estiver operando o mesmo cliente, a CLI retorna exit `17`.
+- Senhas nunca devem ir em argv. Use `--payload-stdin` para `user:add` e `user:resetpassword`.
+- O timeout padrao e `WORKER_OCC_TIMEOUT_SEC=60`.
+
+### Health Consolidado
+
+```bash
+nextcloud-manage health --json
+```
+
+O comando roda 8 checks em paralelo: containers compartilhados, certificados Traefik, DNS fixos, recording, HaRP via socket-proxy, disco, fila Redis e worker.
+
+### Socket Proxy e Secrets
+
+Clientes novos usam `DOCKER_HOST=tcp://shared-socket-proxy:2375` no HaRP. Para migrar cliente existente:
+
+```bash
+nextcloud-manage upgrade-harp acme
+```
+
+Os secrets compartilhados ficam em `/opt/shared-services/secrets/*` com modo `0600`; o `.env` dos shared services deve conter apenas referencias `*_FILE`.
+
 ### SSH Gateway ncsaas-api
 
 ```bash
