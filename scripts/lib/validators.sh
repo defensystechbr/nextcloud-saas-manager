@@ -20,6 +20,7 @@ readonly ASYNC_ALLOWED=(
   user-create user-remove user-modify
   group-create group-remove group-modify
   apps-enable apps-disable
+  create-extended remove-extended
 )
 
 # Namespaces hierárquicos — token-2 deve ser checado ANTES de tratar como FQDN (CONTRACTS §3.6)
@@ -137,6 +138,10 @@ parse_global_flags() {
     [staging_id]=""
     [strict]=""
     [no_async_pickup]=""
+    [apps]=""
+    [full_apps]=""
+    [force]=""
+    [backup_first]=""
   )
 
   if has_password_in_argv "$@"; then
@@ -150,14 +155,18 @@ parse_global_flags() {
     local arg="${args[$i]}"
     case "$arg" in
       # Flags booleanas — rejeitar forma --flag=value
-      --async|--json|--dry-run|--payload-stdin|--strict|--no-async-pickup)
+      --async|--json|--dry-run|--payload-stdin|--strict|--no-async-pickup|--full-apps|--force|--backup-first)
         local key="${arg#--}"
         key="${key//-/_}"
         PARSED_FLAGS[$key]="1"
         ;;
-      --async=*|--json=*|--dry-run=*|--payload-stdin=*|--strict=*|--no-async-pickup=*)
+      --async=*|--json=*|--dry-run=*|--payload-stdin=*|--strict=*|--no-async-pickup=*|--full-apps=*|--force=*|--backup-first=*)
         echo "parse_global_flags: erro — flag booleana nao aceita '=value': ${arg}" >&2
         return 5
+        ;;
+      # --apps aceita valor via = (CSV de apps)
+      --apps=*)
+        PARSED_FLAGS[apps]="${arg#--apps=}"
         ;;
       # --confirm aceita forma booleana OU --confirm=<value>
       --confirm)

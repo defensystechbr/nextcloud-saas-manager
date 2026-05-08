@@ -30,6 +30,12 @@ source "${MANAGE_SCRIPT_DIR}/lib/ssh_audit.sh"
 source "${MANAGE_SCRIPT_DIR}/lib/legacy_helpers.sh"
 # shellcheck source=scripts/lib/dispatch.sh
 source "${MANAGE_SCRIPT_DIR}/lib/dispatch.sh"
+# shellcheck source=scripts/lib/feature_o.sh
+source "${MANAGE_SCRIPT_DIR}/lib/feature_o.sh"
+# shellcheck source=scripts/lib/feature_o_ext.sh
+source "${MANAGE_SCRIPT_DIR}/lib/feature_o_ext.sh"
+# shellcheck source=scripts/lib/occ_bridge.sh
+source "${MANAGE_SCRIPT_DIR}/lib/occ_bridge.sh"
 
 # ============================================================
 # CONFIGURAÇÃO GLOBAL
@@ -277,6 +283,11 @@ CRED_EOF
         log_error "Nextcloud: FALHA"
     fi
 
+    # D3.5 — Extended setup: --apps, --full-apps, --staging-id
+    if [[ -n "${PARSED_FLAGS[apps]:-}" || "${PARSED_FLAGS[full_apps]:-}" == "1" || -n "${PARSED_FLAGS[staging_id]:-}" ]]; then
+        cmd_create_post_extended "$CLIENT_NAME"
+    fi
+
     echo ""
     log_success "Instância '${CLIENT_NAME}' criada com sucesso!"
     echo ""
@@ -476,19 +487,34 @@ cmd_remove() {
         exit 1
     fi
 
+    # D3.6 — --backup-first: enqueue backup antes de remover (job composto)
+    if [[ "${PARSED_FLAGS[backup_first]:-}" == "1" && "${PARSED_FLAGS[async]:-}" == "1" ]]; then
+        cmd_backup_then_remove_enqueue "$CLIENT_NAME"
+        return 0
+    fi
+
+    # D3.6 — Validar confirmação em modo async/worker
+    _cmd_remove_validate_confirm "$CLIENT_NAME" || exit 5
+
     # shellcheck disable=SC1090
     source "${BASE_DIR}/${CLIENT_NAME}/.env"
     load_shared_config
 
-    echo ""
-    log_warning "ATENÇÃO: Isso vai REMOVER PERMANENTEMENTE a instância '${CLIENT_NAME}'!"
-    log_warning "Domínio: ${DOMAIN}"
-    log_warning "Database: ${MYSQL_DATABASE}"
-    echo ""
-    read -r -p "Digite 'CONFIRMAR' para prosseguir: " confirm
-    if [ "$confirm" != "CONFIRMAR" ]; then
-        log_info "Operação cancelada."
-        exit 0
+    local _force="${PARSED_FLAGS[force]:-}"
+    local _is_worker="${PARSED_FLAGS[no_async_pickup]:-}"
+
+    # Prompt de confirmação apenas em modo sync sem --force e sem worker
+    if [[ -z "$_force" && -z "$_is_worker" ]]; then
+        echo ""
+        log_warning "ATENÇÃO: Isso vai REMOVER PERMANENTEMENTE a instância '${CLIENT_NAME}'!"
+        log_warning "Domínio: ${DOMAIN}"
+        log_warning "Database: ${MYSQL_DATABASE}"
+        echo ""
+        read -r -p "Digite 'CONFIRMAR' para prosseguir: " _confirm_input
+        if [ "$_confirm_input" != "CONFIRMAR" ]; then
+            log_info "Operação cancelada."
+            exit 0
+        fi
     fi
 
     cd "${BASE_DIR}/${CLIENT_NAME}" || { log_error "Diretório não encontrado"; exit 1; }
@@ -511,6 +537,24 @@ cmd_remove() {
     update_recording_backends
 
     log_success "Instância '${CLIENT_NAME}' removida completamente!"
+}
+
+# ============================================================
+# COMANDO: BACKUP-THEN-REMOVE (D3.6 — job composto)
+# Executado pelo worker quando cmd=backup-then-remove.
+# ============================================================
+cmd_backup_then_remove() {
+    local CLIENT_NAME="$1"
+    log_info "backup-then-remove: fazendo backup de '${CLIENT_NAME}' antes de remover..."
+    # Force confirm for the remove step (worker mode)
+    PARSED_FLAGS[force]="1"
+    PARSED_FLAGS[no_async_pickup]="1"
+    cmd_backup "$CLIENT_NAME" 2>&1 || {
+        log_error "backup-then-remove: backup falhou para '${CLIENT_NAME}'; abortando remocao."
+        return 1
+    }
+    log_info "backup-then-remove: backup concluido; removendo instancia..."
+    cmd_remove "$CLIENT_NAME"
 }
 
 # ============================================================
@@ -921,8 +965,24 @@ case "$TOKEN0" in
                     fi
                     dispatch_legacy_cmd "$CLIENT_NAME" "$DOMAIN_OR_PLACEHOLDER" "create" "${POSITIONAL[@]:3}"
                     ;;
-                status|credentials|backup|restore|stop|start|update|remove)
+                status|credentials|backup|restore|stop|start|update)
                     dispatch_legacy_cmd "$CLIENT_NAME" "$DOMAIN_OR_PLACEHOLDER" "$COMMAND" "${POSITIONAL[@]:3}"
+                    ;;
+                backup-then-remove)
+                    dispatch_legacy_cmd "$CLIENT_NAME" "$DOMAIN_OR_PLACEHOLDER" "backup-then-remove" "${POSITIONAL[@]:3}"
+                    ;;
+                remove)
+                    # D3.6 — pre-validate confirm before async enqueue
+                    if [[ "${PARSED_FLAGS[async]:-}" == "1" ]]; then
+                        _cmd_remove_validate_confirm "$CLIENT_NAME" || exit 5
+                        if [[ "${PARSED_FLAGS[backup_first]:-}" == "1" ]]; then
+                            cmd_backup_then_remove_enqueue "$CLIENT_NAME" "$DOMAIN_OR_PLACEHOLDER"
+                        else
+                            dispatch_legacy_cmd "$CLIENT_NAME" "$DOMAIN_OR_PLACEHOLDER" "remove" "${POSITIONAL[@]:3}"
+                        fi
+                    else
+                        dispatch_legacy_cmd "$CLIENT_NAME" "$DOMAIN_OR_PLACEHOLDER" "remove" "${POSITIONAL[@]:3}"
+                    fi
                     ;;
                 "")
                     log_error "Comando não especificado para cliente '${CLIENT_NAME}'"

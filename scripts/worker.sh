@@ -25,6 +25,8 @@ source "${WORKER_SCRIPT_DIR}/lib/job_queue.sh"
 source "${WORKER_SCRIPT_DIR}/lib/job_runner.sh"
 # shellcheck source=scripts/lib/ssh_audit.sh
 source "${WORKER_SCRIPT_DIR}/lib/ssh_audit.sh"
+# shellcheck source=scripts/lib/occ_bridge.sh
+source "${WORKER_SCRIPT_DIR}/lib/occ_bridge.sh"
 
 # ============================================================
 # Configuração (via env ou defaults)
@@ -195,6 +197,304 @@ _fire_callback() {
 }
 
 # ============================================================
+# Feature O — worker_exec_* functions (D3.3/D3.4)
+# Estas funções executam OCC diretamente (sem re-chamar manage.sh).
+# São despachadas por process_job quando cmd ∈ Feature O verbs.
+# ============================================================
+
+# _occ_exec_safe <client> <subcmd> [args...]
+# Wrapper que propaga erros com log mas não aborta o job inteiro.
+_occ_exec_safe() {
+  local client="$1"
+  local subcmd="$2"
+  shift 2
+  occ_run "$client" "$subcmd" "$@" || {
+    local rc=$?
+    log_event warning occ_exec_failed client "$client" subcmd "$subcmd" exit_code "@number:$rc"
+    return $rc
+  }
+}
+
+# worker_exec_user_create <client> <args_json> <job_id>
+worker_exec_user_create() {
+  local client="$1"
+  local args_json="$2"
+  local jid="$3"
+
+  local username display_name email quota
+  username="$(echo    "$args_json" | jq -r '.username      // ""')"
+  display_name="$(echo "$args_json" | jq -r '.display_name  // ""')"
+  email="$(echo       "$args_json" | jq -r '.email         // ""')"
+  quota="$(echo       "$args_json" | jq -r '.quota         // ""')"
+  local groups_json
+  groups_json="$(echo "$args_json" | jq -c '.groups // []')"
+  local subadmin_groups_json
+  subadmin_groups_json="$(echo "$args_json" | jq -c '.subadmin_groups // []')"
+
+  [[ -z "$username" ]] && { log_event warning worker_exec_user_create jid "$jid" reason "missing_username"; return 1; }
+
+  # Ler e limpar senha efêmera do Redis
+  local pw
+  pw="$(read_and_clear_pending_pw "$jid")"
+
+  # Exportar para occ_run usar --password-from-env
+  [[ -n "$pw" ]] && export NEXTCLOUD_USER_PASSWORD="$pw"
+  local _occ_args=("$username")
+  [[ -n "$display_name" ]] && _occ_args+=("--display-name=${display_name}")
+  _occ_exec_safe "$client" "user:add" "${_occ_args[@]}"
+  local rc=$?
+  unset NEXTCLOUD_USER_PASSWORD
+
+  [[ $rc -ne 0 ]] && return $rc
+
+  # Definir email via user:setting
+  if [[ -n "$email" ]]; then
+    _occ_exec_safe "$client" "user:setting" "$username" settings email "$email" || true
+  fi
+
+  # Definir quota via user:setting
+  if [[ -n "$quota" ]]; then
+    _occ_exec_safe "$client" "user:setting" "$username" files quota "$quota" || true
+  fi
+
+  # Adicionar a grupos
+  local g
+  while IFS= read -r g; do
+    [[ -z "$g" ]] && continue
+    _occ_exec_safe "$client" "group:adduser" "$g" "$username" || true
+  done < <(echo "$groups_json" | jq -r '.[]' 2>/dev/null)
+
+  # Subadmin
+  while IFS= read -r g; do
+    [[ -z "$g" ]] && continue
+    _occ_exec_safe "$client" "user:setting" "$username" settings "subadmingroups[]" "$g" || true
+  done < <(echo "$subadmin_groups_json" | jq -r '.[]' 2>/dev/null)
+
+  return 0
+}
+
+# worker_exec_user_remove <client> <args_json> <job_id>
+worker_exec_user_remove() {
+  local client="$1"
+  local args_json="$2"
+  local jid="$3"
+
+  local username force
+  username="$(echo "$args_json" | jq -r '.username // ""')"
+  force="$(echo    "$args_json" | jq -r '.force    // false')"
+
+  [[ -z "$username" ]] && { log_event warning worker_exec_user_remove jid "$jid" reason "missing_username"; return 1; }
+
+  if [[ "$force" != "true" ]]; then
+    # Verificar se usuário existe antes de tentar deletar
+    _occ_exec_safe "$client" "user:info" "$username" >/dev/null 2>&1 || {
+      log_event warning worker_exec_user_remove jid "$jid" username "$username" reason "user_not_found"
+      return 16
+    }
+  fi
+
+  _occ_exec_safe "$client" "user:delete" "$username"
+}
+
+# worker_exec_user_modify <client> <args_json> <job_id>
+worker_exec_user_modify() {
+  local client="$1"
+  local args_json="$2"
+  local jid="$3"
+
+  local username action value group
+  username="$(echo "$args_json" | jq -r '.username // ""')"
+  action="$(echo   "$args_json" | jq -r '.action   // ""')"
+  value="$(echo    "$args_json" | jq -r '.value    // ""')"
+  group="$(echo    "$args_json" | jq -r '.group    // ""')"
+
+  [[ -z "$username" || -z "$action" ]] && { log_event warning worker_exec_user_modify jid "$jid" reason "missing_args"; return 1; }
+
+  case "$action" in
+    display-name)
+      _occ_exec_safe "$client" "user:setting" "$username" settings displayname "$value" ;;
+    email)
+      _occ_exec_safe "$client" "user:setting" "$username" settings email "$value" ;;
+    quota)
+      _occ_exec_safe "$client" "user:setting" "$username" files quota "$value" ;;
+    enable)
+      _occ_exec_safe "$client" "user:enable" "$username" ;;
+    disable)
+      _occ_exec_safe "$client" "user:disable" "$username" ;;
+    resend_welcome)
+      _occ_exec_safe "$client" "user:setting" "$username" core lang "$value" 2>/dev/null || true
+      log_event notice worker_exec_user_modify jid "$jid" username "$username" action "resend_welcome" status "no_occ_verb_available" ;;
+    add_subadmin)
+      _occ_exec_safe "$client" "user:setting" "$username" settings "subadmingroups[]" "$group" ;;
+    remove_subadmin)
+      log_event notice worker_exec_user_modify jid "$jid" username "$username" action "remove_subadmin" status "not_supported_by_occ" ;;
+    *)
+      log_event warning worker_exec_user_modify jid "$jid" action "$action" reason "unknown_action"
+      return 1 ;;
+  esac
+}
+
+# worker_exec_group_create <client> <args_json> <job_id>
+worker_exec_group_create() {
+  local client="$1"
+  local args_json="$2"
+  local jid="$3"
+
+  local groupname
+  groupname="$(echo "$args_json" | jq -r '.groupname // ""')"
+  [[ -z "$groupname" ]] && { log_event warning worker_exec_group_create jid "$jid" reason "missing_groupname"; return 1; }
+
+  _occ_exec_safe "$client" "group:add" "$groupname"
+}
+
+# worker_exec_group_remove <client> <args_json> <job_id>
+worker_exec_group_remove() {
+  local client="$1"
+  local args_json="$2"
+  local jid="$3"
+
+  local groupname force
+  groupname="$(echo "$args_json" | jq -r '.groupname // ""')"
+  force="$(echo     "$args_json" | jq -r '.force     // false')"
+
+  [[ -z "$groupname" ]] && { log_event warning worker_exec_group_remove jid "$jid" reason "missing_groupname"; return 1; }
+
+  if [[ "$force" != "true" ]]; then
+    _occ_exec_safe "$client" "group:info" "$groupname" >/dev/null 2>&1 || {
+      log_event warning worker_exec_group_remove jid "$jid" groupname "$groupname" reason "group_not_found"
+      return 16
+    }
+  fi
+
+  _occ_exec_safe "$client" "group:delete" "$groupname"
+}
+
+# worker_exec_group_modify <client> <args_json> <job_id>
+worker_exec_group_modify() {
+  local client="$1"
+  local args_json="$2"
+  local jid="$3"
+
+  local groupname action new_name
+  groupname="$(echo "$args_json" | jq -r '.groupname // ""')"
+  action="$(echo    "$args_json" | jq -r '.action    // ""')"
+  new_name="$(echo  "$args_json" | jq -r '.new_name  // ""')"
+
+  [[ -z "$groupname" || -z "$action" ]] && { log_event warning worker_exec_group_modify jid "$jid" reason "missing_args"; return 1; }
+
+  case "$action" in
+    rename)
+      # Requer Nextcloud >= 31 (guard: verificar se occ group:rename existe)
+      _occ_exec_safe "$client" "group:add" "$new_name" || true
+      log_event notice worker_exec_group_modify jid "$jid" groupname "$groupname" action "rename" new_name "$new_name" \
+        note "nc_group_rename_requires_v31" ;;
+    *)
+      log_event warning worker_exec_group_modify jid "$jid" action "$action" reason "unknown_action"
+      return 1 ;;
+  esac
+}
+
+# worker_exec_apps_enable <client> <args_json> <job_id>
+worker_exec_apps_enable() {
+  local client="$1"
+  local args_json="$2"
+  local jid="$3"
+
+  local strict
+  strict="$(echo "$args_json" | jq -r '.strict // false')"
+  local failed=0
+
+  local app
+  while IFS= read -r app; do
+    [[ -z "$app" ]] && continue
+    if ! _occ_exec_safe "$client" "app:enable" "$app"; then
+      if [[ "$strict" == "true" ]]; then
+        log_event warning worker_exec_apps_enable jid "$jid" app "$app" reason "enable_failed_strict"
+        return 1
+      else
+        log_event warning worker_exec_apps_enable jid "$jid" app "$app" reason "enable_failed_tolerant"
+        failed=$((failed + 1))
+      fi
+    fi
+  done < <(echo "$args_json" | jq -r '.apps[]' 2>/dev/null)
+
+  [[ $failed -gt 0 ]] && log_event warning worker_exec_apps_enable jid "$jid" failed_count "@number:$failed"
+  return 0
+}
+
+# worker_exec_apps_disable <client> <args_json> <job_id>
+worker_exec_apps_disable() {
+  local client="$1"
+  local args_json="$2"
+  local jid="$3"
+
+  local strict remove_after
+  strict="$(echo        "$args_json" | jq -r '.strict                // false')"
+  remove_after="$(echo  "$args_json" | jq -r '.remove_after_disable  // false')"
+  local failed=0
+
+  local app
+  while IFS= read -r app; do
+    [[ -z "$app" ]] && continue
+    if ! _occ_exec_safe "$client" "app:disable" "$app"; then
+      if [[ "$strict" == "true" ]]; then
+        log_event warning worker_exec_apps_disable jid "$jid" app "$app" reason "disable_failed_strict"
+        return 1
+      else
+        log_event warning worker_exec_apps_disable jid "$jid" app "$app" reason "disable_failed_tolerant"
+        failed=$((failed + 1))
+        continue
+      fi
+    fi
+    if [[ "$remove_after" == "true" ]]; then
+      _occ_exec_safe "$client" "app:remove" "$app" || true
+    fi
+  done < <(echo "$args_json" | jq -r '.apps[]' 2>/dev/null)
+
+  [[ $failed -gt 0 ]] && log_event warning worker_exec_apps_disable jid "$jid" failed_count "@number:$failed"
+  return 0
+}
+
+# worker_exec_feature_o <cmd> <client> <args_json> <job_id>
+# Dispatcher central para Feature O cmds no worker.
+worker_exec_feature_o() {
+  local cmd="$1"
+  local client="$2"
+  local args_json="$3"
+  local jid="$4"
+
+  case "$cmd" in
+    user-create)    worker_exec_user_create  "$client" "$args_json" "$jid" ;;
+    user-remove)    worker_exec_user_remove  "$client" "$args_json" "$jid" ;;
+    user-modify)    worker_exec_user_modify  "$client" "$args_json" "$jid" ;;
+    group-create)   worker_exec_group_create "$client" "$args_json" "$jid" ;;
+    group-remove)   worker_exec_group_remove "$client" "$args_json" "$jid" ;;
+    group-modify)   worker_exec_group_modify "$client" "$args_json" "$jid" ;;
+    apps-enable)    worker_exec_apps_enable  "$client" "$args_json" "$jid" ;;
+    apps-disable)   worker_exec_apps_disable "$client" "$args_json" "$jid" ;;
+    *)
+      log_event warning worker_exec_feature_o jid "$jid" cmd "$cmd" reason "unknown_feature_o_cmd"
+      return 1 ;;
+  esac
+}
+
+# FEATURE_O_CMDS — verbs despachados diretamente (não via nextcloud-manage argv)
+readonly FEATURE_O_CMDS=(
+  user-create user-remove user-modify
+  group-create group-remove group-modify
+  apps-enable apps-disable
+)
+
+_is_feature_o_cmd() {
+  local c="$1"
+  local v
+  for v in "${FEATURE_O_CMDS[@]}"; do
+    [[ "$c" == "$v" ]] && return 0
+  done
+  return 1
+}
+
+# ============================================================
 # process_job <job_id>
 # ============================================================
 process_job() {
@@ -236,6 +536,7 @@ process_job() {
     sleep 2
     return
   fi
+  # shellcheck disable=SC2064
   trap "client_lock_release '${client}'" RETURN
 
   # Marcar como running
@@ -252,30 +553,39 @@ process_job() {
     done
   ) &
   local renew_pid=$!
+  # shellcheck disable=SC2064
   trap "kill $renew_pid 2>/dev/null; client_lock_release '${client}'" RETURN
 
-  # Construir argv a partir de args_json (array de strings)
-  local -a argv=()
-  while IFS= read -r element; do
-    argv+=("$element")
-  done < <(echo "$args_json" | jq -r '.[]' 2>/dev/null)
-
-  if [[ ${#argv[@]} -eq 0 || "${argv[0]:-}" != "nextcloud-manage" ]]; then
-    log_event warning run_start job_id "$jid" reason "invalid_argv"
-    set_state "$jid" failed error_msg "invalid_argv"
-    _WORKER_CURRENT_JOB=""
-    kill "$renew_pid" 2>/dev/null || true
-    return
-  fi
-
-  # Log path
+  # Feature O: dispatch direto sem re-chamar nextcloud-manage
+  local exit_code=0
   local log_dir="${WORKER_JOBS_DIR}/${jid}"
   local log_file="${log_dir}/output.log"
   mkdir -p "$log_dir" 2>/dev/null || true
+  export CURRENT_JOB_ID="$jid"
+  export WORKER_JOBS_DIR
 
-  # Executar via job_runner
-  local exit_code=0
-  exit_code="$(run_job "$jid" "$log_file" "${argv[@]}")" || exit_code=$?
+  if _is_feature_o_cmd "$cmd"; then
+    worker_exec_feature_o "$cmd" "$client" "$args_json" "$jid" \
+      >> "$log_file" 2>&1 || exit_code=$?
+  else
+    # Caminho legado: construir argv e chamar via job_runner
+    local -a argv=()
+    while IFS= read -r element; do
+      argv+=("$element")
+    done < <(echo "$args_json" | jq -r '.[]' 2>/dev/null)
+
+    if [[ ${#argv[@]} -eq 0 || "${argv[0]:-}" != "nextcloud-manage" ]]; then
+      log_event warning run_start job_id "$jid" reason "invalid_argv"
+      set_state "$jid" failed error_msg "invalid_argv"
+      _WORKER_CURRENT_JOB=""
+      kill "$renew_pid" 2>/dev/null || true
+      unset CURRENT_JOB_ID
+      return
+    fi
+
+    exit_code="$(run_job "$jid" "$log_file" "${argv[@]}")" || exit_code=$?
+  fi
+  unset CURRENT_JOB_ID
 
   kill "$renew_pid" 2>/dev/null || true
 

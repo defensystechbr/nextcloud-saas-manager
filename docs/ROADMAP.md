@@ -1563,14 +1563,14 @@
 
 | Status | Tamanho | Tarefa | Skill/Command | Depende de |
 |--------|---------|--------|---------------|------------|
-| [ ] | M | 3.1 — `lib/occ_bridge.sh`: implementar `occ_run` real (consome allowlist de 35 entries materializada em D1; `docker exec <c>-app php occ <subcmd> "${args[@]}"` em modo argv; parsed_result quando OCC suporta --output=json; bloqueio sandbox para 8 BLOCKLIST patterns) | `bash` + `bats` | D1.7, D2.3 |
-| [ ] | M | 3.2 — inbox-staging: ativar SFTP jail (drop-in 51-ncsaas-api-sftp.conf ja instalado em D2.5); criar metadata `nc:inbox:<staging-id>` (size_total, files[], created_at); GC orfaos em 24h (jobs-gc.timer estendido) | `bash` + `sshd` + `bats` | D2.5 |
-| [ ] | M | 3.3 — user-group-apps user: cmd_user_create / cmd_user_remove (--force) / cmd_user_modify (display-name, email, groups, quota, enable, disable, resend_welcome, add_subadmin, remove_subadmin) — todas async, payload-stdin obrigatorio para senha | `bash` + `bats` | 3.1 |
-| [ ] | M | 3.4 — user-group-apps group/apps: cmd_group_create / cmd_group_remove (--force) / cmd_group_modify (rename via OCC ≥31, com guard); cmd_apps_enable (lote, parcial-tolerante, --strict) / cmd_apps_disable (lote, --strict, remove_after_disable) | `bash` + `bats` | 3.1 |
-| [ ] | M | 3.5 — create estendido: --apps=a,b,c / --full-apps / --staging-id=<uuid> / --payload-stdin (logo_data_url + background_data_url ≤256KB; >256KB exige SCP) | `bash` + `bats` | 3.1, 3.2 |
-| [ ] | M | 3.6 — remove estendido: --force, --backup-first (job composto: backup-then-remove), --confirm=<cliente> obrigatorio em sync | `bash` + `bats` | 3.1 |
-| [ ] | M | 3.7 — Tests integration Feature O: user/group/apps lifecycle + SCP staging + senha via stdin + sanitization journald | `bats` | 3.1..3.6 |
-| [ ] | P | 3.8 — Atualizar `docs/CONTRACTS.md` para revisao 0.4 refletindo implementacao concreta + regenerar JSON Schemas se schema_version permanece 1 | `bash` (manual edit) | 3.1..3.7 |
+| [x] | M | 3.1 — `lib/occ_bridge.sh`: implementar `occ_run` real (consome allowlist de 35 entries materializada em D1; `docker exec <c>-app php occ <subcmd> "${args[@]}"` em modo argv; parsed_result quando OCC suporta --output=json; bloqueio sandbox para 8 BLOCKLIST patterns) | `bash` + `bats` | D1.7, D2.3 |
+| [x] | M | 3.2 — inbox-staging: ativar SFTP jail (drop-in 51-ncsaas-api-sftp.conf ja instalado em D2.5); criar metadata `nc:inbox:<staging-id>` (size_total, files[], created_at); GC orfaos em 24h (jobs-gc.timer estendido) | `bash` + `sshd` + `bats` | D2.5 |
+| [x] | M | 3.3 — user-group-apps user: cmd_user_create / cmd_user_remove (--force) / cmd_user_modify (display-name, email, groups, quota, enable, disable, resend_welcome, add_subadmin, remove_subadmin) — todas async, payload-stdin obrigatorio para senha | `bash` + `bats` | 3.1 |
+| [x] | M | 3.4 — user-group-apps group/apps: cmd_group_create / cmd_group_remove (--force) / cmd_group_modify (rename via OCC ≥31, com guard); cmd_apps_enable (lote, parcial-tolerante, --strict) / cmd_apps_disable (lote, --strict, remove_after_disable) | `bash` + `bats` | 3.1 |
+| [x] | M | 3.5 — create estendido: --apps=a,b,c / --full-apps / --staging-id=<uuid> / --payload-stdin (logo_data_url + background_data_url ≤256KB; >256KB exige SCP) | `bash` + `bats` | 3.1, 3.2 |
+| [x] | M | 3.6 — remove estendido: --force, --backup-first (job composto: backup-then-remove), --confirm=<cliente> obrigatorio em sync | `bash` + `bats` | 3.1 |
+| [x] | M | 3.7 — Tests integration Feature O: user/group/apps lifecycle + SCP staging + senha via stdin + sanitization journald | `bats` | 3.1..3.6 |
+| [x] | P | 3.8 — Atualizar `docs/CONTRACTS.md` para revisao 0.4 refletindo implementacao concreta + regenerar JSON Schemas se schema_version permanece 1 | `bash` (manual edit) | 3.1..3.7 |
 
 **Notas tecnicas (tarefas M):**
 

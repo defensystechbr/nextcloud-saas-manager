@@ -16,11 +16,11 @@ Group=root
 ExecStart=/usr/bin/find /opt/nextcloud-customers/jobs -maxdepth 1 -type f -name '*.log' -mtime +30 -delete
 ExecStartPost=/usr/bin/find /opt/nextcloud-customers/jobs -maxdepth 1 -type f -name '*.log.gz' -mtime +90 -delete
 
-# 2. Inbox SFTP staging (Feature O.5): órfãos >24h sem job referenciado.
-#    A varredura é conservadora (só remove dirs vazios mais antigos que 24h).
-#    Diretórios com arquivos são mantidos — operação manual identifica órfãos
-#    consultando nc:inbox:<staging-id> no Redis (ARCHITECTURE §10 inbox-staging).
-ExecStartPost=/usr/bin/find /opt/nextcloud-customers/inbox -mindepth 1 -maxdepth 1 -type d -empty -mtime +1 -delete
+# 2. Inbox SFTP staging (Feature O.5 — D3.2): órfãos >24h sem consumo.
+#    Remove dirs não-vazios + vazios com mtime > 24h (1440 min).
+#    Redis keys nc:inbox:<id> têm EXPIRE 86400 e expiram automaticamente;
+#    este GC limpa o filesystem residual quando o TTL Redis já expirou.
+ExecStartPost=/usr/bin/find /opt/nextcloud-customers/inbox -mindepth 1 -maxdepth 1 -type d -mmin +1440 -exec /bin/rm -rf {} +
 
 # 3. Hardening básico
 ProtectSystem=full

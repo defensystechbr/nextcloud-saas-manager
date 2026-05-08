@@ -52,23 +52,23 @@ teardown() {
   [ "$status" -eq 0 ]
 }
 
-# ─── 2. Parser híbrido — token-2 namespace ─────────────────
-@test "namespace user: retorna not_implemented_yet (exit 99)" {
+# ─── 2. Parser híbrido — token-2 namespace (D3: implementados) ─────────────
+@test "namespace user: user create --async enfileira job (D3 implementado)" {
   run bash "$MANAGE" acme user create john --async --json
-  [ "$status" -eq 99 ]
-  [[ "$output" == *"not_implemented_yet"* ]]
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"user-create"* ]]
 }
 
-@test "namespace group: retorna not_implemented_yet (exit 99)" {
+@test "namespace group: group create --async enfileira job (D3 implementado)" {
   run bash "$MANAGE" acme group create admins --async --json
-  [ "$status" -eq 99 ]
-  [[ "$output" == *"not_implemented_yet"* ]]
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"group-create"* ]]
 }
 
-@test "namespace apps: retorna not_implemented_yet (exit 99)" {
+@test "namespace apps: apps enable --async enfileira job (D3 implementado)" {
   run bash "$MANAGE" acme apps enable deck,tasks --async --json
-  [ "$status" -eq 99 ]
-  [[ "$output" == *"not_implemented_yet"* ]]
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"apps-enable"* ]]
 }
 
 @test "namespace occ-exec: retorna not_implemented_yet (exit 99)" {

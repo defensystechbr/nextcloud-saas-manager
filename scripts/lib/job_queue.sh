@@ -2,6 +2,9 @@
 # scripts/lib/job_queue.sh — Operações sobre a fila de jobs Redis
 # dbindex 16 (ARCH-001, CONTRACTS §6.1). Prefixo nc: em todas as chaves.
 # NUNCA usar KEYS nc:jobs:* — sempre SCAN MATCH ... COUNT 1000.
+#
+# D3.2 — inbox-staging: nc:inbox:<staging-id> hash com metadados SCP.
+# Chave de senha efêmera: nc:pending_pw:<uuid> EX 300.
 # Source guard
 [ "${JOB_QUEUE_SH_SOURCED:-0}" = "1" ] && return 0
 readonly JOB_QUEUE_SH_SOURCED=1
@@ -498,4 +501,159 @@ job_list() {
   done
   json+="]"
   echo "$json"
+}
+
+# ============================================================
+# inbox_metadata_create <staging_id> <file_count> <size_total> [client]
+# HSET nc:inbox:<staging_id> + EXPIRE 86400 (24h).
+# Retorna: 0=ok, 5=uuid invalido
+# ============================================================
+inbox_metadata_create() {
+  local staging_id="${1:?inbox_metadata_create: staging_id obrigatorio}"
+  local file_count="${2:-0}"
+  local size_total="${3:-0}"
+  local client="${4:-}"
+
+  if ! is_valid_uuid_v4 "$staging_id"; then
+    echo "inbox_metadata_create: staging_id deve ser UUID v4 lowercase: ${staging_id}" >&2
+    return 5
+  fi
+
+  local ts
+  ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  local redis_key="nc:inbox:${staging_id}"
+
+  _redis_cli HSET "$redis_key" \
+    staging_id  "$staging_id" \
+    created_at  "$ts" \
+    consumed_at "" \
+    files       "$file_count" \
+    size_total  "$size_total" \
+    client      "$client" >/dev/null
+  _redis_cli EXPIRE "$redis_key" 86400 >/dev/null
+  return 0
+}
+
+# ============================================================
+# inbox_metadata_get <staging_id>
+# Retorna JSON com campos do hash ou "{}" se não existir.
+# ============================================================
+inbox_metadata_get() {
+  local staging_id="${1:?inbox_metadata_get: staging_id obrigatorio}"
+  local redis_key="nc:inbox:${staging_id}"
+
+  local raw
+  raw="$(_redis_raw_cli HGETALL "$redis_key" 2>/dev/null)"
+
+  if [[ -z "$raw" ]]; then
+    echo "{}"
+    return 0
+  fi
+
+  printf '%s\n' "$raw" | jq -Rnc '
+    [inputs] as $items
+    | reduce range(0; ($items | length); 2) as $i
+        ({}; . + {($items[$i]): ($items[$i + 1] // "")})
+  '
+}
+
+# ============================================================
+# inbox_metadata_consume <staging_id> <job_id>
+# Marca staging como consumido (update consumed_at).
+# Retorna: 0=ok, 1=não existe, 5=uuid invalido
+# ============================================================
+inbox_metadata_consume() {
+  local staging_id="${1:?inbox_metadata_consume: staging_id obrigatorio}"
+  local job_id="${2:?inbox_metadata_consume: job_id obrigatorio}"
+  local redis_key="nc:inbox:${staging_id}"
+
+  local exists
+  exists="$(_redis_cli EXISTS "$redis_key" 2>/dev/null || echo 0)"
+  if [[ "$exists" != "1" ]]; then
+    return 1
+  fi
+
+  local ts
+  ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  _redis_cli HSET "$redis_key" consumed_at "$ts" job_id "$job_id" >/dev/null
+  return 0
+}
+
+# ============================================================
+# inbox_metadata_delete <staging_id>
+# Remove hash nc:inbox:<staging_id>.
+# ============================================================
+inbox_metadata_delete() {
+  local staging_id="${1:?inbox_metadata_delete: staging_id obrigatorio}"
+  local redis_key="nc:inbox:${staging_id}"
+  _redis_cli DEL "$redis_key" >/dev/null 2>&1 || true
+}
+
+# ============================================================
+# inbox_staging_consume <staging_id> <job_id> <inbox_base_dir> <jobs_dir>
+# Move arquivos de inbox/<staging_id>/ para jobs/<job_id>/staging/.
+# Valida tamanho total (<= 10MB) e por arquivo (<= 5MB).
+# Retorna: 0=ok, 18=size_limit_exceeded, 19=staging_not_found
+# ============================================================
+inbox_staging_consume() {
+  local staging_id="${1:?inbox_staging_consume: staging_id obrigatorio}"
+  local job_id="${2:?inbox_staging_consume: job_id obrigatorio}"
+  local inbox_base="${3:-/opt/nextcloud-customers/inbox}"
+  local jobs_dir="${4:-/opt/nextcloud-saas/jobs}"
+
+  local src_dir="${inbox_base}/${staging_id}"
+  if [[ ! -d "$src_dir" ]]; then
+    echo "inbox_staging_consume: staging dir not found: ${src_dir}" >&2
+    return 19
+  fi
+
+  # Validar tamanho (limite por arquivo 5MB, total 10MB)
+  local total_bytes=0
+  local f
+  while IFS= read -r -d '' f; do
+    local sz
+    sz="$(stat -c %s "$f" 2>/dev/null || echo 0)"
+    if [[ "$sz" -gt 5242880 ]]; then
+      echo "inbox_staging_consume: file too large (>5MB): ${f}" >&2
+      return 18
+    fi
+    total_bytes=$(( total_bytes + sz ))
+  done < <(find "$src_dir" -maxdepth 1 -type f -print0 2>/dev/null)
+
+  if [[ "$total_bytes" -gt 10485760 ]]; then
+    echo "inbox_staging_consume: total size exceeds 10MB: ${total_bytes}" >&2
+    return 18
+  fi
+
+  local dst_dir="${jobs_dir}/${job_id}/staging"
+  mkdir -p "$dst_dir"
+  # Move all files (non-recursive: inbox is flat)
+  find "$src_dir" -maxdepth 1 -type f -exec mv {} "$dst_dir/" \;
+
+  inbox_metadata_consume "$staging_id" "$job_id" || true
+  return 0
+}
+
+# ============================================================
+# store_pending_pw <uuid_key>
+# Armazena NEXTCLOUD_USER_PASSWORD em nc:pending_pw:<key> EX 300.
+# Uso: passe o UUID da chave; o valor vem de $NEXTCLOUD_USER_PASSWORD.
+# ============================================================
+store_pending_pw() {
+  local pw_key="${1:?store_pending_pw: pw_key obrigatorio}"
+  local pw="${NEXTCLOUD_USER_PASSWORD:-}"
+  [[ -n "$pw" ]] || return 0
+  _redis_cli SET "nc:pending_pw:${pw_key}" "$pw" EX 300 >/dev/null
+}
+
+# ============================================================
+# read_and_clear_pending_pw <uuid_key>
+# Lê nc:pending_pw:<key>, emite para stdout, apaga a chave.
+# ============================================================
+read_and_clear_pending_pw() {
+  local pw_key="${1:?read_and_clear_pending_pw: pw_key obrigatorio}"
+  local val
+  val="$(_redis_cli GET "nc:pending_pw:${pw_key}" 2>/dev/null || echo "")"
+  _redis_cli DEL "nc:pending_pw:${pw_key}" >/dev/null 2>&1 || true
+  echo "$val"
 }

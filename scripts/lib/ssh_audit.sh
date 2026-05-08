@@ -139,26 +139,34 @@ audit_worker() {
 }
 
 # ============================================================
-# audit_occ <client> <subcmd> <decision> [exit_code] [duration_ms]
+# audit_occ <client> <subcmd> <decision> [key value ...]
 # tag: nextcloud-saas-occ-exec, facility: daemon
-# decision: accept|reject
+# decision: accept|reject|rejected|success|failed|timeout
+# Extra key-value pairs are included in the NDJSON payload.
+# Special keys: exit_code and duration_ms are emitted as @number.
 # ============================================================
 audit_occ() {
   local client="${1:?audit_occ: client obrigatorio}"
   local subcmd="${2:?audit_occ: subcmd obrigatorio}"
   local decision="${3:?audit_occ: decision obrigatorio}"
-  local exit_code="${4:-}"
-  local duration_ms="${5:-}"
+  shift 3
 
   local ts
   ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
   local level="notice"
-  [[ "$decision" == "reject" ]] && level="warning"
+  [[ "$decision" == "reject" || "$decision" == "rejected" || "$decision" == "failed" ]] && level="warning"
+  [[ "$decision" == "timeout" ]] && level="warning"
 
   local extra_args=()
-  [[ -n "$exit_code"    ]] && extra_args+=(exit_code "@number:${exit_code}")
-  [[ -n "$duration_ms"  ]] && extra_args+=(duration_ms "@number:${duration_ms}")
+  while [[ $# -ge 2 ]]; do
+    local k="$1" v="$2"
+    shift 2
+    case "$k" in
+      exit_code|duration_ms) extra_args+=("$k" "@number:${v}") ;;
+      *) extra_args+=("$k" "$v") ;;
+    esac
+  done
 
   local payload
   payload="$(emit_json \
@@ -167,7 +175,7 @@ audit_occ() {
     client "$client" \
     subcmd "$subcmd" \
     decision "$decision" \
-    "${extra_args[@]}")"
+    "${extra_args[@]+"${extra_args[@]}"}")"
 
   _emit "nextcloud-saas-occ-exec" "daemon" "$level" "$payload"
 }

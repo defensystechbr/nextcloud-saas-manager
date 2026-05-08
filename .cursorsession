@@ -18,7 +18,7 @@
   "fase_nome": "Planejamento tecnico concluido (docs/ROADMAP.md gerado: 5 sprints D + 48 tasks + 4 critical Best-of-N; autopilot mode com auditoria entre sprints)",
   "usuarios_alvo": "Time DevOps interno operando servidor Ubuntu 24.04 com multiplas instancias Nextcloud SaaS, e API REST consumidora (em outro repo) que invoca via SSH",
   "prazo": null,
-  "ultimo_update": "2026-05-08T19:30:00-03:00",
+  "ultimo_update": "2026-05-08T19:36:58Z",
   "perfil_usuario": "tecnico",
   "principal_preocupacao": "Habilitar consumo do manage.sh por API REST externa via SSH com modo assincrono (fila + worker) sem bloquear a API durante operacoes longas; manter base Bash + Docker Compose intacta",
   "modulos": [
@@ -266,56 +266,7 @@
     "ARCH-008"
   ],
   "sprint_atual": "F1",
-  "checkpoint": {
-    "sprint": "F1",
-    "phase": "done",
-    "branch": "development",
-    "status": "done",
-    "started_at": "2026-05-08T15:17:00Z",
-    "completed_at": "2026-05-08T19:15:00Z",
-    "origin": "/pmo fix",
-    "blocked_sprint": "D2",
-    "goal": "Corrigir blockers CRITICAL/HIGH da validacao D2 antes de retomar D3.",
-    "tasks_total": 7,
-    "tasks_done": 7,
-    "blockers": [],
-    "next_task": null,
-    "validation_gate": {
-      "validation_round": 4,
-      "sprint": "F1",
-      "validated_at": "2026-05-08T19:15:00Z",
-      "findings_found": 0,
-      "findings_registered": [],
-      "files_modified_outside_findings": 0,
-      "askquestion_shown": false,
-      "senior_review_status": "PASS",
-      "result": "APROVADA",
-      "tests": {
-        "bash_n": "PASS",
-        "manage_help": "PASS",
-        "worker_test_mode": "PASS",
-        "unit": "PASS_50_50_NPM_EXEC_BATS",
-        "integration": "PASS_96_96_NPM_EXEC_BATS_DOCKER",
-        "shellcheck": "PASS",
-        "redis": "PASS_DOCKER_FIXTURE",
-        "docker": "PASS_DAEMON_29_3_1",
-        "job_list": "PASS_FAST_JSON_ERROR_REDIS_UNAVAILABLE",
-        "worker_stats": "PASS_FAST_JSON_ERROR_REDIS_UNAVAILABLE"
-      },
-      "blockers": [],
-      "fixed": [
-        "F-D2-001",
-        "F-D2-002",
-        "F-D2-003",
-        "F-D2-004",
-        "F-D2-005",
-        "F-D2-006",
-        "F-D2-007",
-        "F-D2-008",
-        "F-D2-009"
-      ]
-    }
-  },
+  "checkpoint": null,
   "comandos_recentes": [
     "/pmo fix",
     "/pmo novo",
@@ -613,9 +564,9 @@
     }
   ],
   "compact_marker": {
-    "compacted_at": "2026-05-08T18:52:26Z",
-    "usage_percent": 90.49448529411764,
-    "messages_lost": 422
+    "compacted_at": "2026-05-08T19:56:32Z",
+    "usage_percent": 92.182,
+    "messages_lost": 207
   },
   "compact_count": 1,
   "autopilot": {
@@ -626,9 +577,10 @@
       "D5"
     ],
     "started_at": "2026-05-08T19:35:29Z",
-    "completed_sprints": [],
+    "completed_sprints": ["D3"],
     "hard_stops": [],
-    "current_sprint": "D3"
+    "current_sprint": null,
+    "validator_available": true
   },
   "active_automation": "pipeline",
   "validation_gate": {
