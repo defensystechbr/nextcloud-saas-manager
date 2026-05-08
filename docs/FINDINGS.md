@@ -175,3 +175,56 @@ Validado em: 2026-05-08 | Validador: `/qa validar`
 **Conclusão inicial**: Sprint D2 REPROVADA. Bloqueadores impediam aprovação: CLI/worker não iniciavam, JSON de job state era inválido para jobs reais, contrato de segurança de senha/callback era violado e a suíte dinâmica não pôde ser executada no ambiente atual.
 
 **Revalidação final 2026-05-08**: F-D2-001..F-D2-009 corrigidos ou revalidados. Evidência do gate: `make shellcheck` PASS; `npm exec --yes --package bats -- bats --tap tests/sanity.bats` = 1/1 PASS; `npm exec --yes --package bats -- bats --tap --recursive tests/unit` = 50/50 PASS; `timeout 240 npm exec --yes --package bats -- bats --tap --recursive tests/integration` com Docker daemon disponível = 96/96 PASS. F-D2-007 fechado com validação dinâmica local usando Redis fixture via Docker.
+
+---
+
+## Sprint D3 — Feature O (Lifecycle de users/groups/apps + SCP staging + occ-bridge P1)
+
+Validado em: 2026-05-08 | Validador: `/qa validar`
+
+---
+
+### [F-D3-001] HIGH — Jobs Feature O pegam client-lock duas vezes antes do OCC
+
+- **Arquivo**: `scripts/worker.sh`, `scripts/lib/occ_bridge.sh`
+- **Descrição**: `process_job` adquire `client_lock` para o cliente antes de despachar jobs, mas os handlers Feature O chamam `occ_run`, que tenta adquirir o mesmo lock novamente para verbs OCC mutáveis (`user:add`, `group:add`, `app:enable`, etc.). Como `client_lock_acquire` usa `SET NX`, o segundo acquire falha e `occ_run` retorna `client_busy_async_job_running`/exit 17.
+- **Evidência**: `process_job` chama `client_lock_acquire` antes de `worker_exec_feature_o`; `occ_run` chama `client_lock_acquire` novamente quando `occ_is_state_changing "$subcmd"` é verdadeiro.
+- **Impacto**: Bloqueia a execução real do lifecycle async entregue pela D3: jobs `user-*`, `group-*` e `apps-*` podem enfileirar corretamente, mas falham no worker antes de executar OCC.
+- **Status**: FIXED — 2026-05-08 (`occ_run` reaproveita o `client_lock` mantido pelo worker via `OCC_CLIENT_LOCK_HELD`; cobertura adicionada em `test_occ_bridge.bats`)
+
+---
+
+### [F-D3-002] HIGH — Batch apps tolerante marca sucesso mesmo quando todos os OCC falham
+
+- **Arquivo**: `scripts/worker.sh::worker_exec_apps_enable`, `scripts/worker.sh::worker_exec_apps_disable`
+- **Descrição**: Em modo sem `--strict`, os handlers incrementam `failed`, registram warning e sempre retornam `0`. Se todos os apps falharem, `process_job` grava o job como `finished`.
+- **Evidência**: Os loops de apps acumulam `failed=$((failed + 1))`, mas o fim das funções executa `return 0` independentemente de `failed == total`.
+- **Impacto**: Consumidores recebem job finalizado com sucesso mesmo quando nenhuma aplicação foi habilitada/desabilitada, quebrando a semântica de batch tolerante.
+- **Status**: FIXED — 2026-05-08 (`worker_exec_apps_enable/disable` retornam falha quando `failed == total`; cobertura adicionada em `test_feature_o.bats`)
+
+---
+
+### [F-D3-003] HIGH — `user create` aceita job sem payload/senha apesar do contrato
+
+- **Arquivo**: `scripts/lib/feature_o.sh::cmd_user_create`, `tests/integration/test_feature_o.bats`
+- **Descrição**: `cmd_user_create` lê payload apenas se `--payload-stdin` estiver setado, mas não exige payload nem senha. A suíte atual valida como sucesso `user create <username> --async --json` sem stdin.
+- **Evidência**: `docs/CONTRACTS.md` exige exit 5 `payload_stdin_required` quando `user create` não recebe `--payload-stdin`; o teste `user create: com --async enfileira job user-create` cobre o comportamento oposto.
+- **Impacto**: A CLI aceita operação inválida, enfileira job sem senha efêmera e empurra a falha para runtime/OCC, contrariando o gate D3 de senha via stdin.
+- **Status**: FIXED — 2026-05-08 (`cmd_user_create` exige `--payload-stdin` e password no payload; testes atualizados para contrato D3)
+
+---
+
+## Resumo D3
+
+| Severidade | Count | Status |
+|-----------|-------|--------|
+| CRITICAL  | 0     | — |
+| HIGH      | 3     | FIXED |
+| MEDIUM    | 0     | — |
+| LOW       | 0     | — |
+
+**Conclusão inicial**: Sprint D3 REPROVADA na revalidação. Gates estáticos e Bats passaram (`make shellcheck`, `bash -n`, unit 50/50, integration 138/138), mas a revisão senior confirmou 3 HIGH funcionais/contratuais que bloqueavam a aprovação e a continuação segura para D4.
+
+**Correção 2026-05-08**: F-D3-001..F-D3-003 corrigidos em sprint aberta. Evidência local: `make shellcheck` PASS; `bash -n` em scripts principais PASS; `tests/unit` = 50/50 PASS; `tests/integration` = 141/141 PASS. Aguardando `/qa validar d3` para revalidar formalmente a sprint.
+
+**Revalidação final 2026-05-08**: F-D3-001..F-D3-003 revalidados e aprovados. Evidência: `make shellcheck` PASS; `bash -n` PASS; `tests/unit` = 50/50 PASS; `tests/integration` = 141/141 PASS; revisão senior final = PASS, sem HIGH/CRITICAL remanescentes.

@@ -91,6 +91,10 @@ cmd_user_create() {
 
   # Ler payload stdin
   local payload_json
+  if [[ "${PARSED_FLAGS[payload_stdin]:-}" != "1" ]]; then
+    emit_error "payload_stdin_required" "user create requer --payload-stdin com password" >&2
+    return 5
+  fi
   payload_json="$(_read_payload_stdin)" || return $?
 
   # Extrair campos não-sensíveis
@@ -106,6 +110,10 @@ cmd_user_create() {
   # Extrair senha (nunca vai no args_json)
   local password
   password="$(echo "$payload_json" | jq -r '.password // ""')"
+  if [[ -z "$password" ]]; then
+    emit_error "missing_password" "user create requer password no payload stdin" >&2
+    return 5
+  fi
 
   # Construir args_json (sem senha)
   local args_json

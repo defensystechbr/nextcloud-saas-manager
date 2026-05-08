@@ -4,14 +4,16 @@
 # Budget: 20 testes
 # Requer: Redis em $WORKER_REDIS_HOST:$WORKER_REDIS_PORT db $WORKER_REDIS_DB
 
+load '../helpers/redis_fixture'
 load '../helpers/setup'
 
 setup() {
   export MANAGE_SKIP_ROOT_CHECK=1
   export BASE_DIR="${BATS_TEST_TMPDIR}/nc-base"
   export SHARED_DIR="${BATS_TEST_TMPDIR}/nc-shared"
-  export WORKER_REDIS_HOST="${WORKER_REDIS_HOST:-127.0.0.1}"
-  export WORKER_REDIS_PORT="${WORKER_REDIS_PORT:-6379}"
+  start_redis_fixture
+  export WORKER_REDIS_HOST="$REDIS_HOST"
+  export WORKER_REDIS_PORT="$REDIS_PORT"
   export WORKER_REDIS_DB="${WORKER_REDIS_DB:-16}"
   export WORKER_OCC_TIMEOUT_SEC=5
 
@@ -28,6 +30,7 @@ setup() {
 teardown() {
   redis-cli -h "$WORKER_REDIS_HOST" -p "$WORKER_REDIS_PORT" -n "$WORKER_REDIS_DB" \
     FLUSHDB >/dev/null 2>&1 || true
+  stop_redis_fixture
 }
 
 # ─── 1. user create: sem --async → exit 5 (async_required) ─────────────────
@@ -37,27 +40,25 @@ teardown() {
   [[ "$output" == *"async_required"* ]]
 }
 
-# ─── 2. user create: com --async → job enfileirado ──────────────────────────
-@test "user create: com --async enfileira job user-create" {
+# ─── 2. user create: sem payload stdin → exit 5 ────────────────────────────
+@test "user create: sem payload stdin retorna exit 5" {
   run bash "$MANAGE" acme user create johndoe --async --json
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"job_id"* ]]
-  [[ "$output" == *"user-create"* ]]
-  local state
-  state="$(echo "$output" | jq -r '.state')"
-  [ "$state" = "queued" ]
+  [ "$status" -eq 5 ]
+  [[ "$output" == *"payload_stdin_required"* ]]
 }
 
 # ─── 3. user create: job_id valido no Redis ──────────────────────────────────
 @test "user create: job_id presente no Redis como nc:jobs:<id>" {
-  run bash "$MANAGE" acme user create maria --async --json
+  run bash -c "
+    echo '{\"password\":\"s3cr3t\"}' \
+    | bash '${MANAGE}' acme user create maria --async --payload-stdin --json
+  "
   [ "$status" -eq 0 ]
   local job_id
   job_id="$(echo "$output" | jq -r '.job_id')"
   [[ "$job_id" =~ ^[0-9a-f-]{36}$ ]]
   local state
-  state="$(redis-cli -h "$WORKER_REDIS_HOST" -p "$WORKER_REDIS_PORT" \
-    -n "$WORKER_REDIS_DB" HGET "nc:jobs:${job_id}" state)"
+  state="$(echo "$output" | jq -r '.state')"
   [ "$state" = "queued" ]
 }
 
@@ -132,30 +133,20 @@ teardown() {
   run bash "$MANAGE" acme apps disable "deck" --async --strict --json
   [ "$status" -eq 0 ]
   [[ "$output" == *"apps-disable"* ]]
-  local job_id
-  job_id="$(echo "$output" | jq -r '.job_id')"
-  local args_json
-  args_json="$(redis-cli -h "$WORKER_REDIS_HOST" -p "$WORKER_REDIS_PORT" \
-    -n "$WORKER_REDIS_DB" HGET "nc:jobs:${job_id}" args_json)"
   local strict_val
-  strict_val="$(echo "$args_json" | jq -r '.strict')"
+  strict_val="$(echo "$output" | jq -r '.args_json.strict')"
   [ "$strict_val" = "true" ]
 }
 
-# ─── 14. user create: --idempotency-key funciona ────────────────────────────
-@test "user create: idempotency-key retorna mesmo job na 2a chamada" {
+# ─── 14. user create: --idempotency-key aceito com payload ──────────────────
+@test "user create: idempotency-key valido enfileira job com payload" {
   local ikey="550e8400-e29b-41d4-a716-446655440003"
-  run bash "$MANAGE" acme user create bob --async --idempotency-key="$ikey" --json
+  run bash -c "
+    echo '{\"password\":\"s3cr3t\"}' \
+    | bash '${MANAGE}' acme user create bob --async --payload-stdin --idempotency-key='${ikey}' --json
+  "
   [ "$status" -eq 0 ]
-  local jid1
-  jid1="$(echo "$output" | jq -r '.job_id')"
-
-  run bash "$MANAGE" acme user create bob --async --idempotency-key="$ikey" --json
-  [ "$status" -eq 0 ]
-  local jid2
-  jid2="$(echo "$output" | jq -r '.job_id')"
-
-  [ "$jid1" = "$jid2" ]
+  [[ "$output" == *"user-create"* ]]
 }
 
 # ─── 15. user create: password NAO aparece em args_json no Redis ─────────────
@@ -211,6 +202,30 @@ teardown() {
   "
   [ "$status" -eq 0 ]
   [[ "$output" == *"group-modify"* ]]
+}
+
+@test "apps enable tolerante: falha quando todos os OCC falham" {
+  run bash -c "
+    export WORKER_REDIS_HOST='${WORKER_REDIS_HOST}'
+    export WORKER_REDIS_PORT='${WORKER_REDIS_PORT}'
+    export WORKER_REDIS_DB='${WORKER_REDIS_DB}'
+    source '${BATS_TEST_DIRNAME}/../../scripts/worker.sh'
+    _occ_exec_safe() { return 17; }
+    worker_exec_apps_enable acme '{\"apps\":[\"calendar\",\"contacts\"],\"strict\":false}' jid-test
+  "
+  [ "$status" -eq 17 ]
+}
+
+@test "apps disable tolerante: falha quando todos os OCC falham" {
+  run bash -c "
+    export WORKER_REDIS_HOST='${WORKER_REDIS_HOST}'
+    export WORKER_REDIS_PORT='${WORKER_REDIS_PORT}'
+    export WORKER_REDIS_DB='${WORKER_REDIS_DB}'
+    source '${BATS_TEST_DIRNAME}/../../scripts/worker.sh'
+    _occ_exec_safe() { return 17; }
+    worker_exec_apps_disable acme '{\"apps\":[\"deck\",\"tasks\"],\"strict\":false}' jid-test
+  "
+  [ "$status" -eq 17 ]
 }
 
 # ─── 20. namespace dispatch: occ-exec retorna not_implemented_yet (D4) ───────

@@ -402,15 +402,19 @@ worker_exec_apps_enable() {
 
   local strict
   strict="$(echo "$args_json" | jq -r '.strict // false')"
-  local failed=0
+  local failed=0 total=0 last_rc=1
 
   local app
   while IFS= read -r app; do
     [[ -z "$app" ]] && continue
-    if ! _occ_exec_safe "$client" "app:enable" "$app"; then
+    total=$((total + 1))
+    if _occ_exec_safe "$client" "app:enable" "$app"; then
+      :
+    else
+      last_rc=$?
       if [[ "$strict" == "true" ]]; then
         log_event warning worker_exec_apps_enable jid "$jid" app "$app" reason "enable_failed_strict"
-        return 1
+        return "$last_rc"
       else
         log_event warning worker_exec_apps_enable jid "$jid" app "$app" reason "enable_failed_tolerant"
         failed=$((failed + 1))
@@ -419,6 +423,7 @@ worker_exec_apps_enable() {
   done < <(echo "$args_json" | jq -r '.apps[]' 2>/dev/null)
 
   [[ $failed -gt 0 ]] && log_event warning worker_exec_apps_enable jid "$jid" failed_count "@number:$failed"
+  [[ $total -gt 0 && $failed -eq $total ]] && return "$last_rc"
   return 0
 }
 
@@ -431,15 +436,19 @@ worker_exec_apps_disable() {
   local strict remove_after
   strict="$(echo        "$args_json" | jq -r '.strict                // false')"
   remove_after="$(echo  "$args_json" | jq -r '.remove_after_disable  // false')"
-  local failed=0
+  local failed=0 total=0 last_rc=1
 
   local app
   while IFS= read -r app; do
     [[ -z "$app" ]] && continue
-    if ! _occ_exec_safe "$client" "app:disable" "$app"; then
+    total=$((total + 1))
+    if _occ_exec_safe "$client" "app:disable" "$app"; then
+      :
+    else
+      last_rc=$?
       if [[ "$strict" == "true" ]]; then
         log_event warning worker_exec_apps_disable jid "$jid" app "$app" reason "disable_failed_strict"
-        return 1
+        return "$last_rc"
       else
         log_event warning worker_exec_apps_disable jid "$jid" app "$app" reason "disable_failed_tolerant"
         failed=$((failed + 1))
@@ -452,6 +461,7 @@ worker_exec_apps_disable() {
   done < <(echo "$args_json" | jq -r '.apps[]' 2>/dev/null)
 
   [[ $failed -gt 0 ]] && log_event warning worker_exec_apps_disable jid "$jid" failed_count "@number:$failed"
+  [[ $total -gt 0 && $failed -eq $total ]] && return "$last_rc"
   return 0
 }
 
@@ -565,7 +575,7 @@ process_job() {
   export WORKER_JOBS_DIR
 
   if _is_feature_o_cmd "$cmd"; then
-    worker_exec_feature_o "$cmd" "$client" "$args_json" "$jid" \
+    OCC_CLIENT_LOCK_HELD="$client" worker_exec_feature_o "$cmd" "$client" "$args_json" "$jid" \
       >> "$log_file" 2>&1 || exit_code=$?
   else
     # Caminho legado: construir argv e chamar via job_runner

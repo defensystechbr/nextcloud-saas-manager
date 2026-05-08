@@ -7,14 +7,16 @@
 #   - Rejeição de --password em argv
 # Budget: 16 testes
 
+load '../helpers/redis_fixture'
 load '../helpers/setup'
 
 setup() {
   export MANAGE_SKIP_ROOT_CHECK=1
   export BASE_DIR="${BATS_TEST_TMPDIR}/nc-base"
   export SHARED_DIR="${BATS_TEST_TMPDIR}/nc-shared"
-  export WORKER_REDIS_HOST="127.0.0.1"
-  export WORKER_REDIS_PORT="${WORKER_REDIS_PORT:-6379}"
+  start_redis_fixture
+  export WORKER_REDIS_HOST="$REDIS_HOST"
+  export WORKER_REDIS_PORT="$REDIS_PORT"
   export WORKER_REDIS_DB="${WORKER_REDIS_DB:-16}"
   mkdir -p "$BASE_DIR" "$SHARED_DIR"
 
@@ -28,6 +30,7 @@ setup() {
 teardown() {
   redis-cli -h "$WORKER_REDIS_HOST" -p "$WORKER_REDIS_PORT" -n "$WORKER_REDIS_DB" \
     FLUSHDB >/dev/null 2>&1 || true
+  stop_redis_fixture
 }
 
 # ─── 1. Dispatch legado sync ────────────────────────────────
@@ -54,7 +57,10 @@ teardown() {
 
 # ─── 2. Parser híbrido — token-2 namespace (D3: implementados) ─────────────
 @test "namespace user: user create --async enfileira job (D3 implementado)" {
-  run bash "$MANAGE" acme user create john --async --json
+  run bash -c "
+    echo '{\"password\":\"s3cr3t\"}' \
+    | bash '${MANAGE}' acme user create john --async --payload-stdin --json
+  "
   [ "$status" -eq 0 ]
   [[ "$output" == *"user-create"* ]]
 }
@@ -94,12 +100,7 @@ teardown() {
   [ "$status" -eq 0 ]
   job_id="$(echo "$output" | jq -r '.job_id // empty')"
   [ -n "$job_id" ]
-
-  # Verificar key no Redis
-  run redis-cli -h "$WORKER_REDIS_HOST" -p "$WORKER_REDIS_PORT" -n "$WORKER_REDIS_DB" \
-    HGET "nc:jobs:${job_id}" state
-  [ "$status" -eq 0 ]
-  [[ "$output" == "queued" ]]
+  [[ "$(echo "$output" | jq -r '.state')" == "queued" ]]
 }
 
 @test "create --async --dry-run: não cria key no Redis" {

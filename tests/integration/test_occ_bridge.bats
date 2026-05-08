@@ -213,6 +213,25 @@ MOCK_EOF
   [[ "$output" == *"0"* ]]
 }
 
+@test "occ_run: reaproveita client_lock mantido pelo worker" {
+  _setup_mock_docker_inspect "true" "ok" 0
+  run bash -c "
+    export WORKER_REDIS_HOST='${WORKER_REDIS_HOST}'
+    export WORKER_REDIS_PORT='${WORKER_REDIS_PORT}'
+    export WORKER_REDIS_DB='${WORKER_REDIS_DB}'
+    source '${LIB_DIR}/occ_bridge.sh'
+    client_lock_acquire testclient 30
+    OCC_CLIENT_LOCK_HELD=testclient occ_run testclient 'user:add' johndoe >/dev/null
+    rc=\$?
+    exists=\$(redis-cli -h '${WORKER_REDIS_HOST}' -p '${WORKER_REDIS_PORT}' -n '${WORKER_REDIS_DB}' EXISTS 'nc:client_lock:testclient')
+    client_lock_release testclient
+    echo "LOCK_EXISTS=\${exists}"
+    exit \$rc
+  "
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"LOCK_EXISTS=1"* ]]
+}
+
 # ─── 13. occ_run: NEXTCLOUD_USER_PASSWORD via env, nao em argv ──────────────
 @test "occ_run: senha passada via env NEXTCLOUD_USER_PASSWORD, nao em argv" {
   local mock_dir="${BATS_TEST_TMPDIR}/mock-pw-$$"

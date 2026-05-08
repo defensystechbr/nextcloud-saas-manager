@@ -10,10 +10,10 @@ setup() {
   source "${REPO_ROOT}/scripts/lib/output_json.sh"
   # shellcheck source=scripts/lib/job_queue.sh
   source "${REPO_ROOT}/scripts/lib/job_queue.sh"
-}
 
-_redis_cli() {
-  return 127
+  _redis_cli() {
+    return 127
+  }
 }
 
 @test "job_list: falha rapidamente quando SCAN nao retorna cursor" {

@@ -231,18 +231,15 @@ occ_run() {
   # 4. Client lock para verbs state-changing
   local need_lock=false
   if occ_is_state_changing "$subcmd"; then
-    if ! client_lock_acquire "$client" "${CLIENT_LOCK_TTL_SEC:-5}"; then
-      audit_occ "$client" "$subcmd" rejected reason "client_locked"
-      emit_json error "client_busy_async_job_running" message "client ${client} is locked by another operation"
-      return 17
+    if [[ "${OCC_CLIENT_LOCK_HELD:-}" != "$client" ]]; then
+      if ! client_lock_acquire "$client" "${CLIENT_LOCK_TTL_SEC:-5}"; then
+        audit_occ "$client" "$subcmd" rejected reason "client_locked"
+        emit_json error "client_busy_async_job_running" message "client ${client} is locked by another operation"
+        return 17
+      fi
+      need_lock=true
     fi
-    need_lock=true
   fi
-
-  _occ_run_release_lock() {
-    [[ "$need_lock" == true ]] && client_lock_release "$client" || true
-  }
-  trap '_occ_run_release_lock' RETURN
 
   # 5. Build OCC args array — NUNCA bash -c, NUNCA string-concat
   local -a occ_args=("$subcmd" "${args[@]+"${args[@]}"}")
@@ -279,6 +276,7 @@ occ_run() {
 
   # 7. Detectar timeout (exit 124 = timeout SIGTERM; 137 = SIGKILL após kill-after)
   if [[ "$exit_code" -eq 124 || "$exit_code" -eq 137 ]]; then
+    [[ "$need_lock" == true ]] && client_lock_release "$client" || true
     audit_occ "$client" "$subcmd" timeout duration_ms "$duration_ms" timeout_sec "${WORKER_OCC_TIMEOUT_SEC:-60}"
     emit_json error "occ_timeout" message "subcommand timed out after ${WORKER_OCC_TIMEOUT_SEC:-60}s" subcommand "$subcmd"
     return 15
@@ -286,6 +284,7 @@ occ_run() {
 
   # 8. Detectar falha OCC
   if [[ "$exit_code" -ne 0 ]]; then
+    [[ "$need_lock" == true ]] && client_lock_release "$client" || true
     audit_occ "$client" "$subcmd" failed exit_code "$exit_code" duration_ms "$duration_ms"
     emit_json \
       error "occ_command_failed" \
@@ -306,6 +305,7 @@ occ_run() {
   fi
 
   audit_occ "$client" "$subcmd" success exit_code 0 duration_ms "$duration_ms"
+  [[ "$need_lock" == true ]] && client_lock_release "$client" || true
 
   emit_json \
     schema_version "1" \
