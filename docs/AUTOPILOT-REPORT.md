@@ -44,3 +44,48 @@
 - Makefile com alvos test-unit, test-integration, test-e2e, test
 - 3 workflows CI validados (bats, shellcheck, contracts-check)
 - manage.sh refatorado para invocar lib/*.sh mantendo compatibilidade legado
+
+## Sprint D2 — CONCLUIDA — Async Core (Queue + Worker + SSH + Observabilidade)
+
+**Branch**: `sprint/D2`
+**Data**: 2026-05-08
+
+### Tasks completadas (11/11)
+
+| Task | Status | Artefato |
+|------|--------|----------|
+| 2.1 — manage-cli parte 2: parser hibrido + dispatch async | DONE | `scripts/manage.sh` (914 LOC), `scripts/lib/dispatch.sh`, `scripts/lib/validators.sh` |
+| 2.2 — Idempotency idem_check integrado ao manage-cli | DONE | `scripts/lib/job_queue.sh::idem_check` + `dispatch_enqueue` |
+| 2.3 — worker.sh daemon (BRPOP + callback HMAC + lock duplo) | DONE | `scripts/worker.sh` (396 LOC) |
+| 2.4 — Instalar systemd units via setup-worker.sh | DONE | `scripts/setup-worker.sh` (AOF + units + jobs dir) |
+| 2.5 — SSH gateway ncsaas-api + shim | DONE | `scripts/setup-ssh-gateway.sh`, `scripts/ncsaas-api-shim` |
+| 2.6 — Wiring observability (NDJSON + journald retention) | DONE | `journald.conf.d/50-nextcloud-saas.conf`, log_event em dispatch/worker/shim |
+| 2.7 — worker status --json | DONE | `scripts/lib/job_queue.sh::worker_status` |
+| 2.8 — job status/logs/cancel + job list (Q-1/Q-2/Q-4) | DONE | `scripts/lib/job_queue.sh::job_cancel/job_list`, `scripts/manage.sh` dispatcher |
+| 2.9 — worker stats --by-cmd/--by-client (Q-3) | DONE | `scripts/lib/job_queue.sh::worker_stats` (SCAN MATCH) |
+| 2.10 — Tests integration e2e async | DONE | 8 test files em `tests/integration/` |
+| 2.11 — Atualizar README + ADMINISTRATION | DONE | `README.md`, `docs/ADMINISTRATION.md` |
+
+### Findings D1 herdados
+
+| ID | Severidade | Descricao | Status |
+|----|-----------|-----------|--------|
+| F-D1-001 | LOW | deploy-server.sh nao editavel por hook | DEFERRED (hook de seguranca) |
+| F-D1-002 | LOW | get_state awk parser nao escapa aspas | DEFERRED D3 |
+| F-D1-003 | INFO | worker_status "null" string vs JSON null | DEFERRED D3 |
+
+**CRITICAL/HIGH: 0** | **Bloqueadores: 0** | **Resultado: APROVADA**
+
+### Artefatos entregues
+
+- `scripts/lib/dispatch.sh` — dispatcher hibrido (legado posicional + namespaces hierarquicos)
+- `scripts/lib/validators.sh` — estendido com parse_global_flags, RESERVED_NAMESPACES, ASYNC_ALLOWED, has_password_in_argv, compute_args_hash
+- `scripts/lib/job_queue.sh` — estendido com idem_check, idem_lookup, dequeue (BRPOP), client_lock_*, worker_lock_*, worker_status, job_cancel, worker_stats, job_list
+- `scripts/worker.sh` — daemon completo: BRPOP loop, process_job, callback HMAC-SHA256 com retry exponencial, lock duplo (flock+Redis), client lock por cliente, watchdog systemd notify, SIGTERM graceful shutdown
+- `scripts/ncsaas-api-shim` — ForceCommand SSH: validacao metacaracteres, allowlist hierarquica, audit log NDJSON, sanitizacao de senhas, sudo exec
+- `scripts/setup-worker.sh` — instalador idempotente: worker binary, systemd units, env, jobs-gc timer, AOF no shared-redis
+- `scripts/setup-ssh-gateway.sh` — instalador idempotente: usuario ncsaas-api, shim, sshd configs, sudoers, inbox dir, journald retention
+- `journald.conf.d/50-nextcloud-saas.conf` — retencao 30d, 2G max, compress
+- `scripts/manage.sh` — estendido para 914 LOC: dispatcher raiz com worker/job/client paths, parse_global_flags, namespace detection
+- 8 arquivos de teste integration Bats (async dispatch, idempotency, worker loop, worker callback, job management, ssh shim, observability, e2e async)
+- `README.md` + `docs/ADMINISTRATION.md` — secoes "Modo assincrono e API REST consumidora"

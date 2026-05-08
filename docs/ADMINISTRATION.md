@@ -237,6 +237,103 @@ Os certificados são armazenados em `/opt/traefik/acme.json` e renovados automat
 
 ---
 
+## Worker Daemon e Modo Assíncrono (v12.0)
+
+### Gerenciar o Worker
+
+```bash
+# Status do serviço systemd
+systemctl status nextcloud-saas-worker
+
+# Iniciar / parar / reiniciar
+systemctl start nextcloud-saas-worker
+systemctl stop nextcloud-saas-worker
+systemctl restart nextcloud-saas-worker
+
+# Ver logs do worker (journald)
+journalctl -u nextcloud-saas-worker -f
+journalctl -u nextcloud-saas-worker --since "1 hour ago" -o json
+
+# Status via manage.sh
+nextcloud-manage worker status --json
+nextcloud-manage worker stats --by-cmd --by-client --json
+```
+
+### Gerenciar Jobs
+
+```bash
+# Listar jobs na fila
+nextcloud-manage job list --state=queued --json
+
+# Ver status de um job específico
+nextcloud-manage job <job_id> status --json
+
+# Ver logs de execução de um job
+nextcloud-manage job <job_id> logs
+
+# Cancelar job em fila (só funciona para state=queued)
+nextcloud-manage job <job_id> cancel
+
+# Listar com filtros
+nextcloud-manage job list --client=acme --cmd=create --limit=10 --json
+```
+
+### Configuração do Worker
+
+Editar `/etc/nextcloud-saas/worker.env`:
+
+```bash
+WORKER_CONCURRENCY=1            # Sempre 1 (ADR-002)
+WORKER_REDIS_HOST=127.0.0.1
+WORKER_REDIS_PORT=6379
+WORKER_REDIS_DB=16              # dbindex dedicado (ARCH-001)
+WORKER_JOB_TIMEOUT_SEC=1800     # Timeout por job (30min)
+WORKER_CALLBACK_BACKOFF=5,30,300
+CLIENT_LOCK_TTL_SEC=5
+WORKER_JOBS_DIR=/opt/nextcloud-saas/jobs
+```
+
+### Logs de Auditoria (journald)
+
+```bash
+# SSH gateway (quem invoou via API REST)
+journalctl -t ncsaas-api-ssh -o json | jq .
+
+# Worker daemon
+journalctl -t nextcloud-saas-worker -o json | jq .
+
+# OCC exec (D4)
+journalctl -t nextcloud-saas-occ-exec -o json | jq .
+```
+
+### SSH Gateway ncsaas-api
+
+```bash
+# Verificar usuário
+getent passwd ncsaas-api
+
+# Ver authorized_keys
+cat /home/ncsaas-api/.ssh/authorized_keys
+
+# Testar conexão (da máquina da API REST)
+ssh -i /path/to/api_key ncsaas-api@servidor 'nextcloud-manage list'
+
+# Kill-switch de emergência
+usermod -L ncsaas-api
+
+# Reabilitar
+usermod -U ncsaas-api
+
+# Rotação de chave SSH
+# 1. Gere nova chave: ssh-keygen -t ed25519 -C "api-prod-$(date +%Y)"
+# 2. Adicione nova chave em /home/ncsaas-api/.ssh/authorized_keys
+# 3. Remova chave antiga
+# 4. Teste nova chave
+# 5. Remova entrada antiga do authorized_keys
+```
+
+---
+
 ## Estrutura de Arquivos por Instância (v11.3.3)
 
 ```

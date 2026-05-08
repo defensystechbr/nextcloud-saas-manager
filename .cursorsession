@@ -265,7 +265,7 @@
     "ARCH-007",
     "ARCH-008"
   ],
-  "sprint_atual": "D1",
+  "sprint_atual": "D2",
   "comandos_recentes": [
     "/pmo novo",
     "/analista planejar",
@@ -562,9 +562,9 @@
     }
   ],
   "compact_marker": {
-    "compacted_at": "2026-05-07T22:20:22Z",
-    "usage_percent": 91.96466666666666,
-    "messages_lost": 103
+    "compacted_at": "2026-05-08T14:21:34Z",
+    "usage_percent": 96.37,
+    "messages_lost": 244
   },
   "compact_count": 1,
   "autopilot": {
@@ -577,9 +577,12 @@
       "D5"
     ],
     "started_at": "2026-05-07T22:37:00Z",
-      "completed_sprints": ["D1"],
-      "hard_stops": [],
-      "current_sprint": "D2"
+    "completed_sprints": [
+      "D1",
+      "D2"
+    ],
+    "hard_stops": [],
+    "current_sprint": "D3"
   },
   "active_automation": "pipeline"
 }

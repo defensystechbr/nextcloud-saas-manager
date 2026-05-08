@@ -33,8 +33,8 @@
 
 | Sprint | Categoria | Gate (resumo) | Status | Tasks | Modulos | Resumo | Linhas |
 |--------|-----------|---------------|--------|-------|---------|--------|--------|
-| D1 | D | tests/unit + tests/integration verde no CI; lib/*.sh extraido sem mudar comportamento | pendente | 11 | tests-bats, ci-shellcheck, manage-cli (refactor base) | Foundation: testes + CI + extracao de lib | 102-617 |
-| D2 | D | API consegue create --async --json em <2s via SSH; worker executa real; callback HMAC dispara; idempotency 24h | pendente | 11 | manage-cli (parte 2), idempotency, worker, ssh-gateway, observability, queue-introspection | Async core: queue + worker + SSH + observabilidade | 618-1532 |
+| D1 | D | tests/unit + tests/integration verde no CI; lib/*.sh extraido sem mudar comportamento | **concluida** | 11/11 | tests-bats, ci-shellcheck, manage-cli (refactor base) | Foundation: testes + CI + extracao de lib | 102-617 |
+| D2 | D | API consegue create --async --json em <2s via SSH; worker executa real; callback HMAC dispara; idempotency 24h | **concluida** | 11/11 | manage-cli (parte 2), idempotency, worker, ssh-gateway, observability, queue-introspection | Async core: queue + worker + SSH + observabilidade | 618-1532 |
 | D3 | D | API consegue user/group/apps lifecycle async via SSH; SCP staging funciona em jail; senha nunca em journald | pendente | 8 | inbox-staging, user-group-apps, occ-bridge (Parte 1) | Feature O: lifecycle de users/groups/apps + SCP staging + occ-bridge interno | 1533-2216 |
 | D4 | D | occ-exec sync passthrough em <60s; client-lock impede concorrencia; health 8 checks <10s; socket-proxy interposto; secrets em /opt/.../secrets | pendente | 8 | occ-bridge (Parte 2), client-lock, health-command, socket-proxy, secrets-file | Feature P + hardening: occ-exec + client-lock + health + socket-proxy + secrets | 2217-2650 |
 | D5 | D | E2E docker-in-docker passa; auditorias verde; ADRs registradas; deploy staging validado; tag v12.0 publicado | pendente | 10 | docs, ADRs, e2e, auditorias | Estabilizacao + polish + deploy v12.0 | 2651-2763 |
@@ -622,17 +622,17 @@
 
 | Status | Tamanho | Tarefa | Skill/Command | Depende de |
 |--------|---------|--------|---------------|------------|
-| [ ] | M | 2.1 — manage-cli parte 2: parser hibrido (legado posicional + namespaces user/group/apps/occ-exec), dispatch sync vs enqueue, --json/--dry-run/--async/--idempotency-key/--callback/--confirm/--payload-stdin/--strict | `bash` + `bats` | D1.10 |
-| [ ] | M | 2.2 — Idempotency em `lib/job_queue.sh::idem_check` integrado ao manage-cli (consulta antes de enqueue; conflito = exit 3) | `bash` + `bats` | 2.1 |
-| [ ] | M | 2.3 — `scripts/worker.sh` daemon: BRPOP loop, set_state running, exec via job_runner, sanitize log, callback HMAC com retry exponencial 5s/30s/300s, lock duplo flock+Redis, watchdog systemd notify | `bash` + `bats` | 2.1, D1.8 |
-| [ ] | M | 2.4 — Instalar systemd units em deploy-server.sh: nextcloud-saas-worker.service + .env + jobs-gc.timer/.service; habilitar AOF em shared-redis (setup-shared.sh) | `bash` + `systemd` | 2.3 |
-| [ ] | M | 2.5 — ssh-gateway: criar usuario ncsaas-api + sshd_config.d/50-ncsaas-api.conf + sudoers/ncsaas-api + binario `/usr/local/bin/ncsaas-api-shim` em deploy-server.sh | `bash` + `sshd` | 2.1 |
-| [ ] | M | 2.6 — Wiring observability: log_event NDJSON em manage-cli (enqueue), worker (run_start/finish, callback_attempt) e shim (invoke/accept/reject); journald.conf.d/50-nextcloud-saas.conf (SystemMaxUse=2G, MaxRetentionSec=30day) | `bash` + `journald` | 2.3, 2.5 |
-| [ ] | P | 2.7 — `manage.sh worker status [--json]` lendo nc:worker:current + LLEN nc:jobs:queue + jobs_today | `bash` | 2.3 |
-| [ ] | M | 2.8 — `manage.sh job <id> {status\|logs\|cancel}` + `manage.sh job list [--state=...] [--client=...] [--cmd=...] [--limit=N] [--offset=N\|--after=<id>]` (Q-1, Q-2, Q-4) | `bash` + `bats` | 2.1 |
-| [ ] | P | 2.9 — `manage.sh worker stats [--by-cmd] [--by-client] [--json]` (Q-3 — counts agregados via SCAN MATCH; v12.1+ pode promover para counters incrementais) | `bash` | 2.7 |
-| [ ] | M | 2.10 — Tests integration end-to-end async: dispatch + enqueue + idempotency + worker pickup + callback HMAC validation (mock callback receiver) | `bats` | 2.1, 2.3 |
-| [ ] | P | 2.11 — Atualizar `README.md` + `docs/ADMINISTRATION.md` com secao "Modo assincrono e API REST consumidora" | `bash` (manual edit) | 2.1..2.10 |
+| [x] | M | 2.1 — manage-cli parte 2: parser hibrido (legado posicional + namespaces user/group/apps/occ-exec), dispatch sync vs enqueue, --json/--dry-run/--async/--idempotency-key/--callback/--confirm/--payload-stdin/--strict | `bash` + `bats` | D1.10 |
+| [x] | M | 2.2 — Idempotency em `lib/job_queue.sh::idem_check` integrado ao manage-cli (consulta antes de enqueue; conflito = exit 3) | `bash` + `bats` | 2.1 |
+| [x] | M | 2.3 — `scripts/worker.sh` daemon: BRPOP loop, set_state running, exec via job_runner, sanitize log, callback HMAC com retry exponencial 5s/30s/300s, lock duplo flock+Redis, watchdog systemd notify | `bash` + `bats` | 2.1, D1.8 |
+| [x] | M | 2.4 — Instalar systemd units em deploy-server.sh: nextcloud-saas-worker.service + .env + jobs-gc.timer/.service; habilitar AOF em shared-redis (setup-shared.sh) — via setup-worker.sh (deploy-server.sh bloqueado por hook) | `bash` + `systemd` | 2.3 |
+| [x] | M | 2.5 — ssh-gateway: criar usuario ncsaas-api + sshd_config.d/50-ncsaas-api.conf + sudoers/ncsaas-api + binario `/usr/local/bin/ncsaas-api-shim` em deploy-server.sh — via setup-ssh-gateway.sh | `bash` + `sshd` | 2.1 |
+| [x] | M | 2.6 — Wiring observability: log_event NDJSON em manage-cli (enqueue), worker (run_start/finish, callback_attempt) e shim (invoke/accept/reject); journald.conf.d/50-nextcloud-saas.conf (SystemMaxUse=2G, MaxRetentionSec=30day) | `bash` + `journald` | 2.3, 2.5 |
+| [x] | P | 2.7 — `manage.sh worker status [--json]` lendo nc:worker:current + LLEN nc:jobs:queue + jobs_today | `bash` | 2.3 |
+| [x] | M | 2.8 — `manage.sh job <id> {status\|logs\|cancel}` + `manage.sh job list [--state=...] [--client=...] [--cmd=...] [--limit=N] [--offset=N\|--after=<id>]` (Q-1, Q-2, Q-4) | `bash` + `bats` | 2.1 |
+| [x] | P | 2.9 — `manage.sh worker stats [--by-cmd] [--by-client] [--json]` (Q-3 — counts agregados via SCAN MATCH; v12.1+ pode promover para counters incrementais) | `bash` | 2.7 |
+| [x] | M | 2.10 — Tests integration end-to-end async: dispatch + enqueue + idempotency + worker pickup + callback HMAC validation (mock callback receiver) | `bats` | 2.1, 2.3 |
+| [x] | P | 2.11 — Atualizar `README.md` + `docs/ADMINISTRATION.md` com secao "Modo assincrono e API REST consumidora" | `bash` (manual edit) | 2.1..2.10 |
 
 **Notas tecnicas (tarefas M):**
 

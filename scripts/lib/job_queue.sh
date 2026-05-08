@@ -129,14 +129,20 @@ get_state() {
 }
 
 # ============================================================
-# idem_check <key> <args_hash>
+# idem_check <key> <args_hash> <job_id>
 # SET nc:idem:<key> <job_id>:<args_hash> NX EX 86400
-# Retorna: new|same|conflict|invalid
+# Retorna: new | same:<existing_job_id> | conflict | invalid
+#
+# Fluxo:
+#   caller gera job_id antes de chamar; se "new" → usar esse job_id e enqueue.
+#   se "same:<id>" → retornar id existente como idempotent response.
+#   se "conflict" → exit 3.
+#   se "invalid" → exit 5.
 # ============================================================
 idem_check() {
   local idem_key="${1:?idem_check: key obrigatorio}"
   local args_hash="${2:?idem_check: args_hash obrigatorio}"
-  local job_id
+  local job_id="${3:?idem_check: job_id obrigatorio}"
 
   if ! is_valid_uuid_v4 "$idem_key" 2>/dev/null; then
     echo "invalid"
@@ -144,9 +150,9 @@ idem_check() {
   fi
 
   local redis_key="nc:idem:${idem_key}"
-  local new_val="${args_hash}"
+  local new_val="${job_id}:${args_hash}"
 
-  # Tenta SET NX
+  # Tenta SET NX — armazena job_id:args_hash
   local result
   result="$(_redis_cli SET "$redis_key" "$new_val" NX EX 86400 2>/dev/null)"
 
@@ -155,12 +161,16 @@ idem_check() {
     return 0
   fi
 
-  # Já existe — ler valor atual
+  # Já existe — ler valor atual e comparar apenas a hash (após o primeiro ':')
   local existing
   existing="$(_redis_cli GET "$redis_key" 2>/dev/null)"
 
-  if [[ "$existing" == "$args_hash" ]]; then
-    echo "same"
+  # Separar job_id existente e hash existente
+  local existing_job_id="${existing%%:*}"
+  local existing_hash="${existing#*:}"
+
+  if [[ "$existing_hash" == "$args_hash" ]]; then
+    echo "same:${existing_job_id}"
   else
     echo "conflict"
   fi
@@ -168,7 +178,7 @@ idem_check() {
 
 # ============================================================
 # idem_lookup <key>
-# Retorna: <args_hash> ou vazio se não existir
+# Retorna: <job_id>:<args_hash> ou vazio se não existir
 # ============================================================
 idem_lookup() {
   local idem_key="${1:?idem_lookup: key obrigatorio}"
@@ -284,6 +294,110 @@ worker_status() {
 }
 
 # ============================================================
+# job_cancel <job_id>
+# Cancela job em estado queued: seta state=cancelled + LREM da fila.
+# Retorna: 0=cancelado, 1=nao em estado queued (exit 5 no caller)
+# ============================================================
+job_cancel() {
+  local job_id="${1:?job_cancel: job_id obrigatorio}"
+
+  local key="nc:jobs:${job_id}"
+  local state
+  state="$(_redis_cli HGET "$key" "state" 2>/dev/null || echo "")"
+
+  if [[ "$state" != "queued" ]]; then
+    return 1
+  fi
+
+  local ts
+  ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  _redis_cli HSET "$key" state cancelled cancelled_at "$ts" >/dev/null
+  _redis_cli LREM "nc:jobs:queue" 0 "$job_id" >/dev/null
+  _redis_cli EXPIRE "$key" 604800 >/dev/null
+  return 0
+}
+
+# ============================================================
+# worker_stats [by_cmd] [by_client]
+# Retorna JSON com counts por state (e opcionalmente por cmd/client).
+# NUNCA usar KEYS — usa SCAN MATCH nc:jobs:* COUNT 1000.
+# ============================================================
+worker_stats() {
+  local by_cmd="${1:-}"
+  local by_client="${2:-}"
+
+  local cursor=0
+  declare -A state_counts=()
+  declare -A cmd_counts=()
+  declare -A client_counts=()
+
+  while true; do
+    local scan_result
+    scan_result="$(_redis_cli SCAN "$cursor" MATCH "nc:jobs:*" COUNT 1000 2>/dev/null)"
+
+    local new_cursor
+    new_cursor="$(echo "$scan_result" | head -1 | tr -d ' ')"
+    local keys
+    keys="$(echo "$scan_result" | tail -n +2)"
+
+    while IFS= read -r key; do
+      [[ -z "$key" ]] && continue
+      [[ "$key" == "nc:jobs:queue" ]] && continue
+
+      local state cmd client
+      state="$(_redis_cli HGET "$key" state 2>/dev/null || echo "unknown")"
+      cmd="$(_redis_cli HGET "$key" cmd 2>/dev/null || echo "")"
+      client="$(_redis_cli HGET "$key" client 2>/dev/null || echo "")"
+
+      state_counts["${state:-unknown}"]=$(( ${state_counts["${state:-unknown}"]:-0} + 1 ))
+      [[ -n "$by_cmd"    && -n "$cmd"    ]] && cmd_counts["$cmd"]=$(( ${cmd_counts["$cmd"]:-0} + 1 ))
+      [[ -n "$by_client" && -n "$client" ]] && client_counts["$client"]=$(( ${client_counts["$client"]:-0} + 1 ))
+    done <<< "$keys"
+
+    [[ "$new_cursor" == "0" ]] && break
+    cursor="$new_cursor"
+  done
+
+  # Construir JSON resultado
+  local by_state_json="{"
+  local first=1
+  for st in "${!state_counts[@]}"; do
+    [[ $first -eq 0 ]] && by_state_json+=","
+    by_state_json+="\"${st}\":${state_counts[$st]}"
+    first=0
+  done
+  by_state_json+="}"
+
+  local result_args=("by_state" "@json:${by_state_json}")
+
+  if [[ -n "$by_cmd" ]]; then
+    local by_cmd_json="{"
+    first=1
+    for c in "${!cmd_counts[@]}"; do
+      [[ $first -eq 0 ]] && by_cmd_json+=","
+      by_cmd_json+="\"${c}\":${cmd_counts[$c]}"
+      first=0
+    done
+    by_cmd_json+="}"
+    result_args+=("by_cmd" "@json:${by_cmd_json}")
+  fi
+
+  if [[ -n "$by_client" ]]; then
+    local by_client_json="{"
+    first=1
+    for c in "${!client_counts[@]}"; do
+      [[ $first -eq 0 ]] && by_client_json+=","
+      by_client_json+="\"${c}\":${client_counts[$c]}"
+      first=0
+    done
+    by_client_json+="}"
+    result_args+=("by_client" "@json:${by_client_json}")
+  fi
+
+  emit_json "${result_args[@]}"
+}
+
+# ============================================================
 # job_list <state_filter> <client_filter> <cmd_filter> <limit> <offset>
 # Usa SCAN MATCH nc:jobs:* COUNT 1000 (nunca KEYS).
 # Retorna array JSON de jobs filtrados.
@@ -342,12 +456,14 @@ job_list() {
     i=$((i + 1))
   done
 
-  # Serializar como array JSON
+  # Serializar como array JSON com campos completos do job
   local json="["
   local first=1
   for jid in "${page[@]}"; do
     [[ $first -eq 0 ]] && json+=","
-    json+="\"${jid}\""
+    local job_raw
+    job_raw="$(get_state "$jid" 2>/dev/null || echo "{}")"
+    json+="$job_raw"
     first=0
   done
   json+="]"

@@ -1,4 +1,4 @@
-# Nextcloud SaaS Manager v11.3.4
+# Nextcloud SaaS Manager v12.0-dev
 
 Este repositório contém um conjunto de scripts para implantar e gerenciar uma plataforma Nextcloud SaaS multi-tenant, utilizando Docker, Traefik como reverse proxy e Let's Encrypt para certificados SSL automáticos.
 
@@ -8,6 +8,9 @@ O objetivo é permitir que qualquer pessoa com um servidor Ubuntu 24.04 (KVM) po
 
 ### Changelog
 | Versão | Data       | Principais Mudanças |
+|:-------|:-----------|:--------------------|
+| **v12.0-dev** | 2026-05-08 | **Sprint D2 — Async Core:** Modo assíncrono completo via Redis queue + worker systemd + SSH gateway dedicado. `--async --json --idempotency-key --callback` em todos os comandos ASYNC_ALLOWED. Worker daemon (`nextcloud-saas-worker.service`) com BRPOP, callback HMAC-SHA256 e retry 5/30/300s. SSH gateway `ncsaas-api` (nologin + shim + sudoers) para consumo via API REST. Observabilidade NDJSON em journald (tags: `ncsaas-api-ssh`, `nextcloud-saas-worker`). Subcomandos: `worker status/stats`, `job <id> status/logs/cancel`, `job list`. |
+| **v12.0-dev** | 2026-05-07 | **Sprint D1 — Foundation:** Suite Bats (unit + integration), lib/* (validators, output_json, job_queue, job_runner, ssh_audit, legacy_helpers), CI (shellcheck.yml, bats.yml, contracts-check.yml), manage.sh refatorado, systemd units, SSH configs, socket-proxy env, occ_bridge skeleton. |
 |:-------|:-----------|:--------------------|
 | **v11.3.4** | 2026-05-04 | **Onboarding mais simples (zero `chmod`):** o passo de clone do repositório foi simplificado para apenas `git clone` + `cd`, sem SSH redundante e sem `chmod +x scripts/*.sh`. O deploy passa a ser sempre invocado via `sudo bash scripts/deploy-server.sh ...`, eliminando a dependência do bit de execução do filesystem (que não é preservado pelo `git clone` quando o arquivo está em modo `100644` no índice). O próprio `deploy-server.sh` aplica `chmod +x` no `manage.sh` quando o instala em `/opt/nextcloud-customers/`. Cabeçalhos do `deploy-server.sh` e do `manage.sh` atualizados para refletir o novo padrão de invocação e bumpados para v11.3.4. |
 | **v11.3.3** | 2026-05-04 | **Fix HaRP — "Deploy daemon `harp_install` inacessível":** o container `<cliente>-harp` passou a montar `/var/run/docker.sock:/var/run/docker.sock` (read-only) tanto no template gerado por `scripts/manage.sh` (linha 454) quanto no template embutido em `scripts/deploy-server.sh` (linha 338). O daemon AppAPI/HaRP precisa do socket do Docker no host para criar, atualizar e remover containers de ExApps; sem o mount o painel admin do Nextcloud exibia o aviso permanente *"Deploy daemon `harp_install` inacessível"* e qualquer instalação de ExApp falhava. Para instâncias legadas, ver guia em `docs/TROUBLESHOOTING.md` — seção *AppAPI / HaRP não funciona*, item 4. Validado em produção (`mecloud360`, `terminalx`, `nextcloud-teste`). |
@@ -240,6 +243,91 @@ O script irá:
 Para mais detalhes sobre cada operação, consulte a [Documentação de Administração](docs/ADMINISTRATION.md).
 
 Para resolver problemas comuns, consulte o [Guia de Troubleshooting](docs/TROUBLESHOOTING.md).
+
+---
+
+## Modo Assíncrono e API REST Consumidora (v12.0)
+
+A partir da v12.0, o `manage.sh` suporta execução assíncrona via fila Redis, permitindo que uma API REST externa invoque operações longas sem bloquear.
+
+### Arquitetura Async
+
+```
+API REST → SSH ncsaas-api → ncsaas-api-shim → sudo nextcloud-manage
+                                               → --async → enqueue Redis
+                                                           ↓
+                                            nextcloud-saas-worker (systemd)
+                                               → exec cmd → callback HMAC
+```
+
+### Pré-requisitos
+
+1. Redis habilitado com AOF (`appendonly yes`) — configurado por `scripts/setup-worker.sh`
+2. Worker daemon instalado: `sudo scripts/setup-worker.sh`
+3. SSH gateway configurado: `sudo scripts/setup-ssh-gateway.sh`
+
+### Uso Básico
+
+```bash
+# Criar instância de forma assíncrona (retorna em <2s)
+nextcloud-manage acme cloud.acme.com create \
+  --async \
+  --json \
+  --idempotency-key=550e8400-e29b-41d4-a716-446655440000 \
+  --callback=https://api.example.com/webhook/jobs
+
+# Resultado: EnqueuedJob JSON
+# {"schema_version":"1","job_id":"<uuid>","state":"queued","cmd":"create","client":"acme",...}
+
+# Verificar status do job
+nextcloud-manage job <job_id> status --json
+
+# Listar jobs
+nextcloud-manage job list --state=queued --client=acme --json
+
+# Cancelar job em fila
+nextcloud-manage job <job_id> cancel
+
+# Status do worker
+nextcloud-manage worker status --json
+nextcloud-manage worker stats --by-cmd --by-client --json
+```
+
+### Flags Globais (D2)
+
+| Flag | Tipo | Descrição |
+|------|------|-----------|
+| `--async` | bool | Enfileirar em vez de executar sincronamente |
+| `--json` | bool | Saída JSON (CONTRACTS schema_version=1) |
+| `--dry-run` | bool | Simular sem tocar Redis/Docker |
+| `--idempotency-key=<uuid>` | string | UUID v4; re-use retorna mesmo job_id |
+| `--callback=<url>` | string | HTTPS URL para POST HMAC após conclusão |
+| `--confirm=<cliente>` | string | Confirmação para operações destrutivas |
+| `--payload-stdin` | bool | Ler payload JSON de stdin (senhas, etc.) |
+| `--staging-id=<uuid>` | string | ID de arquivo staging via SCP (D3) |
+| `--strict` | bool | Falha em vez de tolerar erros parciais |
+
+### Callback HMAC
+
+O worker envia `POST <callback_url>` com:
+- `Content-Type: application/json`
+- `X-Signature: sha256=<hmac_hex>` (HMAC-SHA256 do body)
+- Body: `{"schema_version":"1","job_id":"<id>","state":"finished|failed","ts":"..."}`
+
+### SSH Gateway
+
+```bash
+# Conexão da API REST:
+ssh -i /path/to/api_key ncsaas-api@servidor 'nextcloud-manage acme cloud.acme.com create --async --json'
+```
+
+O usuário `ncsaas-api` usa `nologin` + `ForceCommand=/usr/local/bin/ncsaas-api-shim`. O shim valida comandos contra uma allowlist hierárquica e rejeita metacaracteres/senhas em argv.
+
+### Kill-switch de emergência
+
+```bash
+usermod -L ncsaas-api  # Desabilitar acesso imediatamente
+```
 
 ---
 

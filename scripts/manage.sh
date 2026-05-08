@@ -1,8 +1,12 @@
 #!/bin/bash
 # ============================================================
 # Nextcloud SaaS Manager v12.0-dev
-# Dispatcher fino — invoca lib/*.sh para lógica especializada.
-# Compatibilidade legada: manage.sh <cliente> <dom|_> <cmd>
+# Dispatcher híbrido — parser legado posicional + namespaces hierárquicos.
+# Compatibilidade: manage.sh <cliente> <dom|_> <cmd> [flags]
+# Novo:            manage.sh <cliente> <namespace> <verb> [flags]
+#                  manage.sh worker {status|stats} [flags]
+#                  manage.sh job <id> {status|logs|cancel} [flags]
+#                  manage.sh job list [filters] [flags]
 # ============================================================
 
 set -euo pipefail
@@ -24,6 +28,8 @@ source "${SCRIPT_DIR}/lib/job_runner.sh"
 source "${SCRIPT_DIR}/lib/ssh_audit.sh"
 # shellcheck source=scripts/lib/legacy_helpers.sh
 source "${SCRIPT_DIR}/lib/legacy_helpers.sh"
+# shellcheck source=scripts/lib/dispatch.sh
+source "${SCRIPT_DIR}/lib/dispatch.sh"
 
 # ============================================================
 # CONFIGURAÇÃO GLOBAL
@@ -557,23 +563,179 @@ cmd_shared_status() {
 # ============================================================
 usage() {
     echo ""
-    echo "Nextcloud SaaS Manager v12.0-dev (Arquitetura Compartilhada)"
+    echo "Nextcloud SaaS Manager v12.0 (Arquitetura Compartilhada)"
     echo ""
-    echo "Uso:"
-    echo "  $(basename "$0") <cliente> <domínio> create     Criar nova instância"
-    echo "  $(basename "$0") <cliente> _ status             Status da instância"
-    echo "  $(basename "$0") <cliente> _ credentials        Exibir credenciais"
-    echo "  $(basename "$0") <cliente> _ backup             Backup completo"
-    echo "  $(basename "$0") <cliente> <backup.tar.gz> restore  Restaurar instância"
-    echo "  $(basename "$0") <cliente> _ stop               Parar instância"
-    echo "  $(basename "$0") <cliente> _ start              Iniciar instância"
-    echo "  $(basename "$0") <cliente> _ update             Atualizar instância"
-    echo "  $(basename "$0") <cliente> _ remove             Remover instância"
+    echo "Uso (legado posicional):"
+    echo "  $(basename "$0") <cliente> <domínio> create     Criar nova instância (async-capable)"
+    echo "  $(basename "$0") <cliente> _ status             Status da instância (sync)"
+    echo "  $(basename "$0") <cliente> _ credentials        Exibir credenciais (sync)"
+    echo "  $(basename "$0") <cliente> _ backup             Backup (async-capable)"
+    echo "  $(basename "$0") <cliente> <backup.gz> restore  Restaurar instância (async-capable)"
+    echo "  $(basename "$0") <cliente> _ stop               Parar (async-capable)"
+    echo "  $(basename "$0") <cliente> _ start              Iniciar (async-capable)"
+    echo "  $(basename "$0") <cliente> _ update             Atualizar (async-capable)"
+    echo "  $(basename "$0") <cliente> _ remove             Remover (async-capable)"
+    echo ""
+    echo "Uso (namespaces hierárquicos — implementação D3/D4):"
+    echo "  $(basename "$0") <cliente> user   create|remove|modify [--async] [--payload-stdin]"
+    echo "  $(basename "$0") <cliente> group  create|remove|modify [--async]"
+    echo "  $(basename "$0") <cliente> apps   enable|disable [--async]"
+    echo "  $(basename "$0") <cliente> occ-exec <subcmd> [args]"
+    echo ""
+    echo "Introspection (D2):"
     echo "  $(basename "$0") list                           Listar todas as instâncias"
     echo "  $(basename "$0") shared-status                  Status dos serviços compartilhados"
+    echo "  $(basename "$0") worker status [--json]         Status do worker daemon"
+    echo "  $(basename "$0") worker stats [--by-cmd] [--by-client] [--json]"
+    echo "  $(basename "$0") job <id> status [--json]       Status de um job"
+    echo "  $(basename "$0") job <id> logs                  Logs de um job"
+    echo "  $(basename "$0") job <id> cancel                Cancelar job em fila"
+    echo "  $(basename "$0") job list [--state=...] [--client=...] [--cmd=...] [--limit=N] [--offset=N]"
     echo ""
-    echo "Flags globais (D2+): --async --json --dry-run --idempotency-key --callback"
+    echo "Flags globais: --async --json --dry-run --idempotency-key=<uuid> --callback=<url>"
+    echo "               --confirm=<client> --payload-stdin --strict --staging-id=<uuid>"
     echo ""
+}
+
+# ============================================================
+# WORKER SUBCOMMANDS (D2.7, D2.9)
+# ============================================================
+cmd_worker_status() {
+    local is_json="${PARSED_FLAGS[json]:-}"
+    local result
+    result="$(worker_status)"
+
+    if [[ "$is_json" == "1" ]]; then
+        echo "$result"
+    else
+        local queue_depth current_job
+        queue_depth="$(echo "$result" | jq -r '.queue_depth // 0')"
+        current_job="$(echo "$result" | jq -r '.current_job // "none"')"
+        echo ""
+        echo "=== Worker Status ==="
+        echo "  Queue depth:  ${queue_depth}"
+        echo "  Current job:  ${current_job}"
+        echo ""
+    fi
+}
+
+cmd_worker_stats() {
+    local is_json="${PARSED_FLAGS[json]:-}"
+    local by_cmd="" by_client=""
+
+    local arg
+    for arg in "$@"; do
+        case "$arg" in
+            --by-cmd)    by_cmd=1 ;;
+            --by-client) by_client=1 ;;
+        esac
+    done
+
+    local result
+    result="$(worker_stats "$by_cmd" "$by_client")"
+
+    if [[ "$is_json" == "1" ]]; then
+        echo "$result"
+    else
+        echo ""
+        echo "=== Worker Stats ==="
+        echo "$result" | jq -r '
+          "  By state:",
+          (.by_state | to_entries[] | "    " + .key + ": " + (.value|tostring)),
+          if .by_cmd then "  By cmd:", (.by_cmd | to_entries[] | "    " + .key + ": " + (.value|tostring)) else "" end,
+          if .by_client then "  By client:", (.by_client | to_entries[] | "    " + .key + ": " + (.value|tostring)) else "" end
+        ' 2>/dev/null || echo "$result"
+        echo ""
+    fi
+}
+
+# ============================================================
+# JOB SUBCOMMANDS (D2.8)
+# ============================================================
+cmd_job_status() {
+    local job_id="${1:?cmd_job_status: job_id obrigatorio}"
+    local is_json="${PARSED_FLAGS[json]:-}"
+    local result
+    result="$(get_state "$job_id")"
+
+    if [[ "$result" == "{}" ]]; then
+        if [[ "$is_json" == "1" ]]; then
+            emit_error "job_not_found" "job '${job_id}' nao encontrado"
+        else
+            log_error "Job não encontrado: ${job_id}"
+        fi
+        exit 1
+    fi
+
+    if [[ "$is_json" == "1" ]]; then
+        echo "$result"
+    else
+        echo ""
+        echo "=== Job ${job_id} ==="
+        echo "$result" | jq -r 'to_entries[] | "  " + .key + ": " + (.value|tostring)'
+        echo ""
+    fi
+}
+
+cmd_job_logs() {
+    local job_id="${1:?cmd_job_logs: job_id obrigatorio}"
+    local log_dir="${WORKER_JOBS_DIR:-/opt/nextcloud-saas/jobs}"
+    local log_file="${log_dir}/${job_id}/output.log"
+
+    if [[ ! -f "$log_file" ]]; then
+        log_error "Log não encontrado para job: ${job_id}"
+        exit 1
+    fi
+    cat "$log_file"
+}
+
+cmd_job_cancel() {
+    local job_id="${1:?cmd_job_cancel: job_id obrigatorio}"
+    local is_json="${PARSED_FLAGS[json]:-}"
+
+    if ! job_cancel "$job_id"; then
+        if [[ "$is_json" == "1" ]]; then
+            emit_error "job_not_cancellable" "job '${job_id}' nao esta em estado queued"
+        else
+            log_error "Job '${job_id}' não pode ser cancelado (não está em estado queued)"
+        fi
+        exit 5
+    fi
+
+    if [[ "$is_json" == "1" ]]; then
+        emit_json job_id "$job_id" state "cancelled"
+    else
+        log_success "Job '${job_id}' cancelado"
+    fi
+}
+
+cmd_job_list() {
+    local state_filter="" client_filter="" cmd_filter="" limit=20 offset=0
+    local is_json="${PARSED_FLAGS[json]:-}"
+
+    local arg
+    for arg in "$@"; do
+        case "$arg" in
+            --state=*)   state_filter="${arg#--state=}" ;;
+            --client=*)  client_filter="${arg#--client=}" ;;
+            --cmd=*)     cmd_filter="${arg#--cmd=}" ;;
+            --limit=*)   limit="${arg#--limit=}" ;;
+            --offset=*)  offset="${arg#--offset=}" ;;
+            --after=*)   offset="${arg#--after=}" ;;  # cursor-style (simplified)
+        esac
+    done
+
+    local result
+    result="$(job_list "$state_filter" "$client_filter" "$cmd_filter" "$limit" "$offset")"
+
+    if [[ "$is_json" == "1" ]]; then
+        echo "$result"
+    else
+        echo ""
+        echo "=== Job List ==="
+        echo "$result" | jq -r '.[] | "\(.job_id // "?") [\(.state // "?")] \(.cmd // "?") @ \(.client // "?")"' 2>/dev/null || echo "$result"
+        echo ""
+    fi
 }
 
 # ============================================================
@@ -582,15 +744,49 @@ usage() {
 
 # Verificar root (exceto em modo de teste)
 if [ "${MANAGE_SKIP_ROOT_CHECK:-0}" != "1" ] && [ "$(id -u)" -ne 0 ]; then
-    log_error "Execute como root: sudo $0 $*"
+    if [[ "${PARSED_FLAGS[json]:-}" == "1" ]] 2>/dev/null; then
+        emit_error "requires_root" "execute como root: sudo $0"
+    else
+        log_error "Execute como root: sudo $0 $*"
+    fi
     exit 1
 fi
 
-# Parsear flags globais (D1: apenas registra; D2 irá atuar)
-parse_global_flags "$@" || true
+# Parsear flags globais — D2: atua; exit 5 em flags inválidas
+if ! parse_global_flags "$@"; then
+    exit 5
+fi
 
-# Parse posicional legado
-case "${1:-}" in
+# ============================================================
+# Extrair args posicionais (sem flags --)
+# ============================================================
+POSITIONAL=()
+_skip_next=0
+for _arg in "$@"; do
+    if [[ $_skip_next -eq 1 ]]; then
+        _skip_next=0
+        continue
+    fi
+    case "$_arg" in
+        --idempotency-key|--callback|--staging-id|--confirm)
+            _skip_next=1
+            ;;
+        --*)
+            ;;
+        *)
+            POSITIONAL+=("$_arg")
+            ;;
+    esac
+done
+
+TOKEN0="${POSITIONAL[0]:-}"
+TOKEN1="${POSITIONAL[1]:-}"
+TOKEN2="${POSITIONAL[2]:-}"
+
+# ============================================================
+# Dispatch raiz
+# ============================================================
+case "$TOKEN0" in
     list)
         cmd_list
         ;;
@@ -600,56 +796,119 @@ case "${1:-}" in
     ""|help|-h|--help)
         usage
         ;;
-    *)
-        CLIENT_NAME="$1"
-        DOMAIN_OR_PLACEHOLDER="${2:-_}"
-        COMMAND="${3:-}"
 
-        # Remover flags globais dos args para não confundir o parser posicional
-        # (flags sempre começam com --, então são ignoradas no posicional)
-
-        case "$COMMAND" in
-            create)
-                if [ "$DOMAIN_OR_PLACEHOLDER" = "_" ]; then
-                    log_error "Domínio obrigatório para 'create'. Uso: $0 <cliente> <domínio> create"
-                    exit 1
-                fi
-                cmd_create "$CLIENT_NAME" "$DOMAIN_OR_PLACEHOLDER"
-                ;;
+    # ─── worker subcommands ─────────────────────────────────
+    worker)
+        case "$TOKEN1" in
             status)
-                cmd_status "$CLIENT_NAME"
+                cmd_worker_status
                 ;;
-            credentials)
-                cmd_credentials "$CLIENT_NAME"
-                ;;
-            backup)
-                cmd_backup "$CLIENT_NAME"
-                ;;
-            restore)
-                cmd_restore "$CLIENT_NAME" "$DOMAIN_OR_PLACEHOLDER"
-                ;;
-            stop)
-                cmd_stop "$CLIENT_NAME"
-                ;;
-            start)
-                cmd_start "$CLIENT_NAME"
-                ;;
-            update)
-                cmd_update "$CLIENT_NAME"
-                ;;
-            remove)
-                cmd_remove "$CLIENT_NAME"
+            stats)
+                cmd_worker_stats "${POSITIONAL[@]:2}"
                 ;;
             "")
-                log_error "Comando não especificado para cliente '${CLIENT_NAME}'"
-                usage
-                exit 1
+                cmd_worker_status
                 ;;
             *)
-                log_error "Comando desconhecido: '${COMMAND}'"
+                log_error "worker: subcomando desconhecido '${TOKEN1}'"
                 usage
                 exit 1
                 ;;
         esac
+        ;;
+
+    # ─── job subcommands ────────────────────────────────────
+    job)
+        case "$TOKEN1" in
+            list)
+                cmd_job_list "${POSITIONAL[@]:2}" "$@"
+                ;;
+            "")
+                log_error "job: id ou 'list' obrigatório"
+                usage
+                exit 1
+                ;;
+            *)
+                # job <id> {status|logs|cancel}
+                local_job_id="$TOKEN1"
+                case "$TOKEN2" in
+                    status|"")
+                        cmd_job_status "$local_job_id"
+                        ;;
+                    logs)
+                        cmd_job_logs "$local_job_id"
+                        ;;
+                    cancel)
+                        cmd_job_cancel "$local_job_id"
+                        ;;
+                    *)
+                        log_error "job: ação desconhecida '${TOKEN2}'"
+                        usage
+                        exit 1
+                        ;;
+                esac
+                ;;
+        esac
+        ;;
+
+    # ─── client dispatch ────────────────────────────────────
+    *)
+        CLIENT_NAME="$TOKEN0"
+
+        # Validar client name
+        if ! is_valid_client_name "$CLIENT_NAME"; then
+            if [[ "${PARSED_FLAGS[json]:-}" == "1" ]]; then
+                emit_error "invalid_client_name" "nome de cliente invalido: '${CLIENT_NAME}'"
+            else
+                log_error "Nome de cliente inválido: '${CLIENT_NAME}'"
+            fi
+            exit 5
+        fi
+
+        # Verificar se TOKEN1 é namespace reservado
+        local _is_namespace=0
+        local _ns
+        for _ns in "${RESERVED_NAMESPACES[@]}"; do
+            if [[ "$TOKEN1" == "$_ns" ]]; then
+                _is_namespace=1
+                break
+            fi
+        done
+
+        if [[ $_is_namespace -eq 1 ]]; then
+            # Namespace path: manage.sh <client> <ns> <verb> [args...]
+            dispatch_namespace_cmd "$CLIENT_NAME" "$TOKEN1" "${POSITIONAL[@]:2}"
+        else
+            # Legacy path: manage.sh <client> <dom|_> <cmd> [args...]
+            DOMAIN_OR_PLACEHOLDER="${TOKEN1:-_}"
+            COMMAND="${TOKEN2:-}"
+
+            case "$COMMAND" in
+                create)
+                    if [ "$DOMAIN_OR_PLACEHOLDER" = "_" ]; then
+                        log_error "Domínio obrigatório para 'create'. Uso: $0 <cliente> <domínio> create"
+                        exit 1
+                    fi
+                    dispatch_legacy_cmd "$CLIENT_NAME" "$DOMAIN_OR_PLACEHOLDER" "create" "${POSITIONAL[@]:3}"
+                    ;;
+                status|credentials|backup|restore|stop|start|update|remove)
+                    dispatch_legacy_cmd "$CLIENT_NAME" "$DOMAIN_OR_PLACEHOLDER" "$COMMAND" "${POSITIONAL[@]:3}"
+                    ;;
+                "")
+                    log_error "Comando não especificado para cliente '${CLIENT_NAME}'"
+                    usage
+                    exit 1
+                    ;;
+                *)
+                    if [[ "${PARSED_FLAGS[json]:-}" == "1" ]]; then
+                        emit_error "unknown_command" "comando '${COMMAND}' desconhecido"
+                    else
+                        log_error "Comando desconhecido: '${COMMAND}'"
+                        usage
+                    fi
+                    exit 1
+                    ;;
+            esac
+        fi
         ;;
 esac

@@ -1,0 +1,177 @@
+#!/bin/bash
+# /usr/local/bin/ncsaas-api-shim
+# Shim SSH para o usuário ncsaas-api (ForceCommand).
+# Recebe o comando via SSH_ORIGINAL_COMMAND, valida, audita e executa
+# nextcloud-manage via sudo. Nunca executa bash nem outros binários.
+#
+# Segurança (ARCH-003, CONTRACTS §3.7):
+#   - Rejeita metacaracteres antes de qualquer parse
+#   - argv[0] DEVE ser "nextcloud-manage"
+#   - Valida verbos contra allowlist hierárquica
+#   - Audit log NDJSON em journald (tag ncsaas-api-ssh)
+#   - Nunca loga senhas (--password=* sanificado antes de logger)
+set -euo pipefail
+
+# ============================================================
+# Auditoria estruturada (ANTES de qualquer rejeição)
+# ============================================================
+KEY_ID="${SSH_USER_AUTH:-unknown}"
+CLIENT_IP="${SSH_CONNECTION%% *}"
+CLIENT_IP="${CLIENT_IP:-local}"
+ORIG="${SSH_ORIGINAL_COMMAND:-}"
+
+_audit_log() {
+  local level="$1"
+  shift
+  local payload="$1"
+  logger -t ncsaas-api-ssh -p "auth.${level}" -- "$payload" 2>/dev/null || true
+}
+
+# Sanitizar comando antes de logar (nunca logar --password=*)
+_sanitize_for_log() {
+  echo "$1" | sed -E 's/(--password|--password-from-env)=\S+/\1=***/g'
+}
+
+_ORIG_SANITIZED="$(_sanitize_for_log "$ORIG")"
+
+_audit_log notice \
+  "{\"event\":\"invoke\",\"key_id\":\"${KEY_ID}\",\"client_ip\":\"${CLIENT_IP}\",\"command\":\"${_ORIG_SANITIZED}\"}"
+
+# ============================================================
+# Validações de segurança
+# ============================================================
+
+# 1. Rejeitar comando vazio (interactive shell attempt)
+if [[ -z "$ORIG" ]]; then
+  _audit_log warning \
+    "{\"event\":\"reject\",\"reason\":\"empty_command\",\"key_id\":\"${KEY_ID}\",\"client_ip\":\"${CLIENT_IP}\"}"
+  echo '{"error":"command_required","message":"comando nao pode ser vazio"}' >&2
+  exit 100
+fi
+
+# 2. Rejeitar metacaracteres que permitem injeção de shell
+# Caracteres proibidos: ; | & $ ` \ e newline
+if printf '%s' "$ORIG" | grep -qP '[;|&$`\\\n\r]' 2>/dev/null \
+   || [[ "$ORIG" == *$'\n'* || "$ORIG" == *$'\r'* || "$ORIG" == *';'* \
+         || "$ORIG" == *'|'* || "$ORIG" == *'&'* || "$ORIG" == *'$'* \
+         || "$ORIG" == *'`'* || "$ORIG" == *'\\'* ]]; then
+  _audit_log warning \
+    "{\"event\":\"reject\",\"reason\":\"metachar\",\"key_id\":\"${KEY_ID}\",\"client_ip\":\"${CLIENT_IP}\",\"command\":\"${_ORIG_SANITIZED}\"}"
+  echo '{"error":"invalid_command","message":"metacharacter detected"}' >&2
+  exit 100
+fi
+
+# 3. Tokenizar com IFS controlado (read -a é seguro sem eval)
+read -r -a ARGV <<< "$ORIG"
+
+# 4. argv[0] DEVE ser "nextcloud-manage"
+if [[ "${ARGV[0]:-}" != "nextcloud-manage" ]]; then
+  _audit_log warning \
+    "{\"event\":\"reject\",\"reason\":\"binary_not_allowed\",\"argv0\":\"${ARGV[0]:-}\",\"key_id\":\"${KEY_ID}\",\"client_ip\":\"${CLIENT_IP}\"}"
+  echo '{"error":"command_not_allowed","message":"somente nextcloud-manage e permitido"}' >&2
+  exit 101
+fi
+
+# 5. Verificar que --password= NÃO aparece em argv (proibido via shim)
+for _arg in "${ARGV[@]:1}"; do
+  if [[ "$_arg" == --password=* || "$_arg" == --password ]]; then
+    _audit_log warning \
+      "{\"event\":\"reject\",\"reason\":\"password_in_argv\",\"key_id\":\"${KEY_ID}\",\"client_ip\":\"${CLIENT_IP}\"}"
+    echo '{"error":"password_in_argv_forbidden","message":"senha deve vir via --payload-stdin"}' >&2
+    exit 5
+  fi
+done
+
+# 6. Allowlist hierárquica de verbos (CONTRACTS §3.7)
+#    Estrutura: manage.sh <client> {<dom> <cmd>} ou {<ns> <verb>} ou {worker|job ...} ou {list|shared-status}
+#
+# Comandos top-level permitidos:
+readonly SHIM_ALLOWED_TOPLEVEL=(
+  list shared-status worker job
+)
+# Legacy cmds (token-3 quando token-2 não é namespace):
+readonly SHIM_ALLOWED_LEGACY_CMDS=(
+  create backup restore stop start update remove status credentials
+)
+# Namespaces (token-2):
+readonly SHIM_ALLOWED_NAMESPACES=(
+  user group apps occ-exec
+)
+# Verbs por namespace (token-3):
+readonly SHIM_ALLOWED_VERBS_USER=(create remove modify)
+readonly SHIM_ALLOWED_VERBS_GROUP=(create remove modify)
+readonly SHIM_ALLOWED_VERBS_APPS=(enable disable)
+# occ-exec: subcmd validado pelo occ_bridge (allowlist interna); shim permite passagem
+readonly SHIM_ALLOWED_VERBS_OCCE=(*)
+
+_in_array() {
+  local needle="$1"
+  shift
+  local el
+  for el in "$@"; do
+    [[ "$el" == "$needle" || "$el" == "*" ]] && return 0
+  done
+  return 1
+}
+
+# argv sem "nextcloud-manage"
+REAL_ARGS=("${ARGV[@]:1}")
+TOKEN1="${REAL_ARGS[0]:-}"
+TOKEN2="${REAL_ARGS[1]:-}"
+TOKEN3="${REAL_ARGS[2]:-}"
+
+# Aceitar flags globais
+_is_flag() { [[ "$1" == --* ]]; }
+
+# Se TOKEN1 é flag ou vazio → passagem direta (e.g. manage.sh --help)
+if [[ -z "$TOKEN1" ]] || _is_flag "$TOKEN1"; then
+  :  # permitir
+elif _in_array "$TOKEN1" "${SHIM_ALLOWED_TOPLEVEL[@]}"; then
+  :  # permitir (list, shared-status, worker, job)
+else
+  # TOKEN1 é client name — validar TOKEN2 (namespace ou dom) e TOKEN3 (cmd ou verb)
+  if _in_array "$TOKEN2" "${SHIM_ALLOWED_NAMESPACES[@]}"; then
+    # Namespace path: validar TOKEN3 conforme namespace
+    if [[ "$TOKEN2" == "user" ]]; then
+      if ! _in_array "$TOKEN3" "${SHIM_ALLOWED_VERBS_USER[@]}"; then
+        _audit_log warning \
+          "{\"event\":\"reject\",\"reason\":\"verb_not_allowed\",\"namespace\":\"user\",\"verb\":\"${TOKEN3}\",\"key_id\":\"${KEY_ID}\"}"
+        echo '{"error":"verb_not_allowed","namespace":"user","verb":"'"${TOKEN3}"'"}' >&2
+        exit 101
+      fi
+    elif [[ "$TOKEN2" == "group" ]]; then
+      if ! _in_array "$TOKEN3" "${SHIM_ALLOWED_VERBS_GROUP[@]}"; then
+        _audit_log warning \
+          "{\"event\":\"reject\",\"reason\":\"verb_not_allowed\",\"namespace\":\"group\",\"verb\":\"${TOKEN3}\",\"key_id\":\"${KEY_ID}\"}"
+        echo '{"error":"verb_not_allowed","namespace":"group","verb":"'"${TOKEN3}"'"}' >&2
+        exit 101
+      fi
+    elif [[ "$TOKEN2" == "apps" ]]; then
+      if ! _in_array "$TOKEN3" "${SHIM_ALLOWED_VERBS_APPS[@]}"; then
+        _audit_log warning \
+          "{\"event\":\"reject\",\"reason\":\"verb_not_allowed\",\"namespace\":\"apps\",\"verb\":\"${TOKEN3}\",\"key_id\":\"${KEY_ID}\"}"
+        echo '{"error":"verb_not_allowed","namespace":"apps","verb":"'"${TOKEN3}"'"}' >&2
+        exit 101
+      fi
+    fi
+    # occ-exec: subcmd validado internamente pelo occ_bridge
+  elif [[ -n "$TOKEN2" ]] && ! _is_flag "$TOKEN2"; then
+    # Legacy path: TOKEN2=domain TOKEN3=cmd
+    if [[ -n "$TOKEN3" ]] && ! _is_flag "$TOKEN3"; then
+      if ! _in_array "$TOKEN3" "${SHIM_ALLOWED_LEGACY_CMDS[@]}"; then
+        _audit_log warning \
+          "{\"event\":\"reject\",\"reason\":\"cmd_not_allowed\",\"cmd\":\"${TOKEN3}\",\"key_id\":\"${KEY_ID}\"}"
+        echo '{"error":"cmd_not_allowed","cmd":"'"${TOKEN3}"'"}' >&2
+        exit 101
+      fi
+    fi
+  fi
+fi
+
+# ============================================================
+# Execução via sudo
+# ============================================================
+_audit_log notice \
+  "{\"event\":\"accept\",\"key_id\":\"${KEY_ID}\",\"client_ip\":\"${CLIENT_IP}\",\"command\":\"${_ORIG_SANITIZED}\"}"
+
+exec sudo -n /usr/local/bin/nextcloud-manage "${REAL_ARGS[@]+"${REAL_ARGS[@]}"}"

@@ -22,6 +22,9 @@ readonly ASYNC_ALLOWED=(
   apps-enable apps-disable
 )
 
+# Namespaces hierárquicos — token-2 deve ser checado ANTES de tratar como FQDN (CONTRACTS §3.6)
+readonly RESERVED_NAMESPACES=(user group apps occ-exec)
+
 # ============================================================
 # is_valid_client_name <name>
 # usage: is_valid_client_name "acme"
@@ -141,14 +144,21 @@ parse_global_flags() {
     local arg="${args[$i]}"
     case "$arg" in
       # Flags booleanas — rejeitar forma --flag=value
-      --async|--json|--dry-run|--confirm|--payload-stdin|--strict|--no-async-pickup)
+      --async|--json|--dry-run|--payload-stdin|--strict|--no-async-pickup)
         local key="${arg#--}"
         key="${key//-/_}"
         PARSED_FLAGS[$key]="1"
         ;;
-      --async=*|--json=*|--dry-run=*|--confirm=*|--payload-stdin=*|--strict=*|--no-async-pickup=*)
+      --async=*|--json=*|--dry-run=*|--payload-stdin=*|--strict=*|--no-async-pickup=*)
         echo "parse_global_flags: erro — flag booleana nao aceita '=value': ${arg}" >&2
         return 5
+        ;;
+      # --confirm aceita forma booleana OU --confirm=<value>
+      --confirm)
+        PARSED_FLAGS[confirm]="1"
+        ;;
+      --confirm=*)
+        PARSED_FLAGS[confirm]="${arg#--confirm=}"
         ;;
       # Flags com valor — aceitar --key=value ou --key value
       --idempotency-key=*)
@@ -185,5 +195,52 @@ parse_global_flags() {
     return 5
   fi
 
+  # Validação: --idempotency-key deve ser UUID v4
+  if [[ -n "${PARSED_FLAGS[idempotency_key]}" ]]; then
+    if ! is_valid_uuid_v4 "${PARSED_FLAGS[idempotency_key]}"; then
+      echo "parse_global_flags: --idempotency-key deve ser UUID v4 lowercase: ${PARSED_FLAGS[idempotency_key]}" >&2
+      return 5
+    fi
+  fi
+
+  # Validação: --callback deve ser HTTPS sem RFC1918
+  if [[ -n "${PARSED_FLAGS[callback]}" ]]; then
+    if ! is_valid_https_url "${PARSED_FLAGS[callback]}"; then
+      echo "parse_global_flags: --callback invalido (deve ser HTTPS e nao RFC1918): ${PARSED_FLAGS[callback]}" >&2
+      return 5
+    fi
+  fi
+
+  # Validação: --staging-id deve ser UUID v4
+  if [[ -n "${PARSED_FLAGS[staging_id]}" ]]; then
+    if ! is_valid_uuid_v4 "${PARSED_FLAGS[staging_id]}"; then
+      echo "parse_global_flags: --staging-id deve ser UUID v4 lowercase: ${PARSED_FLAGS[staging_id]}" >&2
+      return 5
+    fi
+  fi
+
   return 0
+}
+
+# ============================================================
+# has_password_in_argv <argv...>
+# Detecta --password=* ou --password em qualquer argumento.
+# Retorna: 0=detectado (proibido), 1=limpo
+# CONTRACTS §3.6: senha DEVE vir via --payload-stdin
+# ============================================================
+has_password_in_argv() {
+  local arg
+  for arg in "$@"; do
+    [[ "$arg" == --password=* || "$arg" == --password ]] && return 0
+  done
+  return 1
+}
+
+# ============================================================
+# compute_args_hash <arg1> [arg2 ...]
+# Calcula sha256sum dos args posicionais normalizados.
+# Retorna: string hexadecimal de 64 chars
+# ============================================================
+compute_args_hash() {
+  printf '%s\n' "$@" | LC_ALL=C sort | sha256sum | cut -d' ' -f1
 }
