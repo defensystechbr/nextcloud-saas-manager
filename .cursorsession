@@ -14,11 +14,11 @@
     "docs/INFRASTRUCTURE.md",
     "docs/ROADMAP.md"
   ],
-  "fase_atual": "9",
-  "fase_nome": "Planejamento tecnico concluido (docs/ROADMAP.md gerado: 5 sprints D + 48 tasks + 4 critical Best-of-N; autopilot mode com auditoria entre sprints)",
+  "fase_atual": "10",
+  "fase_nome": "Sprint D4 — concluida e validada (Feature P + hardening)",
   "usuarios_alvo": "Time DevOps interno operando servidor Ubuntu 24.04 com multiplas instancias Nextcloud SaaS, e API REST consumidora (em outro repo) que invoca via SSH",
   "prazo": null,
-  "ultimo_update": "2026-05-08T19:16:27-03:00",
+  "ultimo_update": "2026-05-08T19:26:25-03:00",
   "perfil_usuario": "tecnico",
   "principal_preocupacao": "Habilitar consumo do manage.sh por API REST externa via SSH com modo assincrono (fila + worker) sem bloquear a API durante operacoes longas; manter base Bash + Docker Compose intacta",
   "modulos": [
@@ -265,7 +265,7 @@
     "ARCH-007",
     "ARCH-008"
   ],
-  "sprint_atual": null,
+  "sprint_atual": "D5",
   "checkpoint": null,
   "comandos_recentes": [
     "/pmo fix",
@@ -275,7 +275,7 @@
     "/arquiteto contratos",
     "/devops planejar"
   ],
-  "contexto_rapido": "Fase 7 (Infra/CI/CD materializados) concluida em 2026-05-07T21:24. /devops planejar gerou 12 artefatos (3 workflows GH Actions + 4 systemd units + 4 SSH/sudoers + 1 socket-proxy env + 1 occ-bridge skeleton + 1 INFRASTRUCTURE.md). Decisoes confirmadas via AskQuestion: (a) docs/INFRASTRUCTURE.md gerado como doc separado; (b) occ_bridge.sh skeleton com 35 entries OCC_ALLOWLIST (espelha CONTRACTS §3.10.1 exato — drift gate em contracts-check.yml); (c) CI-only por agora (CD via deploy-server.sh manual — Sprint S2). NAO modifiquei shared-services/docker-compose.yml (socket-proxy entra na Sprint S3 com cmd_create + upgrade-harp). NAO modifiquei scripts/deploy-server.sh (instalacao das units fica para Sprint S2). Predecessor: Fase 5 contratos REVISAO 0.3 com ~2400 linhas (10 secoes incluindo §10 Tradução de vocabulários), schema_version='1' permanece (mudanças Feature O/P forward-compatible). Aguarda /pmo plan para quebrar v12.0 em 4 sprints risk-first. /jarvis upgrade 2026-05-08: metadata alinhada ao Beesy 4.16.18-beta; decisions_applied_until=178; strategic_context_captured_at registrado a partir do contexto estrategico ja presente.",
+  "contexto_rapido": "Sprint D4 concluida: occ-exec sync, client-lock, health 8 checks, socket-proxy, secrets-file e upgrade-harp validados. Autopilot pronto para D5.",
   "journal": [
     {
       "at": "2026-05-06T21:14:58Z",
@@ -570,61 +570,55 @@
   },
   "compact_count": 1,
   "autopilot": {
-    "active": false,
+    "active": true,
     "sprint_range": [
-      "D3",
       "D4",
       "D5"
     ],
-    "started_at": "2026-05-08T19:35:29Z",
+    "started_at": "2026-05-08T19:19:12-03:00",
     "completed_sprints": [
-      "D3"
+      "D3",
+      "D4"
     ],
-    "hard_stops": [
-      {
-        "sprint": "D3",
-        "at": "2026-05-08T18:08:18-03:00",
-        "reason": "qa_validar_failed_high_blockers",
-        "blockers": [
-          "F-D3-001",
-          "F-D3-002",
-          "F-D3-003"
-        ]
-      }
+    "hard_stops": [],
+    "current_sprint": "D5",
+    "validator_available": true,
+    "sprint_list": [
+      "D4",
+      "D5"
     ],
-    "current_sprint": null,
-    "validator_available": true
+    "categories": [
+      "D"
+    ],
+    "validate_between": true,
+    "report_path": "docs/AUTOPILOT-REPORT.md"
   },
-  "active_automation": null,
+  "active_automation": "sprint-all",
   "validation_gate": {
-    "sprint": "D3",
-    "command": "/qa validaR",
+    "sprint": "D4",
+    "command": "autopilot senior+qa",
     "result": "APROVADA",
-    "validation_round": 4,
-    "validated_at": "2026-05-08T19:16:27-03:00",
+    "validation_round": 1,
+    "validated_at": "2026-05-08T19:26:25-03:00",
     "critical": 0,
     "high": 0,
     "medium": 0,
     "low": 0,
     "tests": {
-      "roadmap_tasks": "PASS_8_8",
-      "shellcheck": "PASS",
       "bash_n": "PASS",
-      "unit": "PASS_50_50_NPM_EXEC_BATS",
-      "integration": "PASS_141_141_NPM_EXEC_BATS_DOCKER",
-      "senior_review": "PASS_PREVIOUS_FINAL_REVIEW_UNCHANGED"
+      "shellcheck": "PASS",
+      "setup_shared_shellcheck": "PASS",
+      "d4_integration": "PASS_5_5",
+      "regression_d3_d4": "PASS_62_62",
+      "unit_integration_full": "PASS_196_196",
+      "senior_qa_review": "PASS_SELF_AUDIT"
     },
     "blockers": [],
-    "fixed": [
-      "F-D3-001",
-      "F-D3-002",
-      "F-D3-003"
-    ],
-    "senior_review_status": "PASS",
-    "notes": "Revalidacao repetida sem mudancas apos aprovacao final da D3; gates executaveis continuam verdes."
+    "fixed": [],
+    "notes": "D4 completou occ-exec sync, client-lock, health, socket-proxy, secrets-file, upgrade-harp e docs operacionais."
   },
   "beesy_version": "4.16.18-beta",
   "decisions_applied_until": 178,
   "strategic_context_captured_at": "2026-05-08T19:30:00-03:00",
-  "pending_action": "D3 aprovada; commit os fixes e retome o pipeline em D4 quando desejar."
+  "pending_action": "Autopilot D4 concluido; proxima sprint D5."
 }

@@ -2247,14 +2247,14 @@
 
 | Status | Tamanho | Tarefa | Skill/Command | Depende de |
 |--------|---------|--------|---------------|------------|
-| [ ] | M | 4.1 — `manage.sh <cliente> occ-exec <subcmd> [args]` (publico): consumir `lib/occ_bridge.sh::occ_run` (D3.1); --json/--payload-stdin/--staging-id; client-lock check; sem --async (sync only) | `bash` + `bats` | D3.1, 4.2 |
-| [ ] | M | 4.2 — client-lock: `lib/job_queue.sh::client_lock_acquire/release/renew` (criados em D1.7); wiring em worker.sh (acquire antes de exec mutavel) e manage-cli (acquire antes de occ-exec mutavel; exit 17 se ocupado) | `bash` + `bats` | D2.3 |
-| [ ] | M | 4.3 — health-command: `manage.sh health [--json]` com 8 checks paralelos (timeout 5s cada): containers shared, Traefik certs, DNS fixos, recording welcome, harp-via-socket-proxy, disco /opt, redis queue, worker active | `bash` + `bats` | D2.3 |
-| [ ] | M | 4.4 — socket-proxy migrado: adicionar service no shared-services/docker-compose.yml (artefato ja em shared-services/socket-proxy/.env.example); cmd_create gera template HaRP com tcp://socket-proxy:2375; subcomando `manage.sh upgrade-harp <cliente>` migra clientes existentes; smoke test ExApp install em CI | `bash` + `docker compose` + `bats` | D2.4 |
-| [ ] | M | 4.5 — secrets-file: `setup-shared.sh` cria `/opt/shared-services/secrets/*` (0600); compose usa `secrets:`/_FILE quando suportado; runtime export para imagens sem _FILE; remover plaintext de .env | `bash` + `docker compose` + `bats` | D2.4 |
-| [ ] | P | 4.6 — Editar `journald.conf.d/50-nextcloud-saas.conf` (criado em D2.6) para incluir tag occ-exec na retencao | `bash` | D2.6 |
-| [ ] | M | 4.7 — Tests integration occ-exec + client-lock + health: allowlist + bloqueio + parsed_result + concurrencia worker/cli + 8 checks health | `bats` | 4.1..4.5 |
-| [ ] | P | 4.8 — Atualizar `docs/TROUBLESHOOTING.md` (secoes Worker, Socket-proxy, SSH ncsaas-api, OCC-exec) + `docs/ADMINISTRATION.md` (operacao occ-exec) | `bash` (manual edit) | 4.1..4.7 |
+| [x] | M | 4.1 — `manage.sh <cliente> occ-exec <subcmd> [args]` (publico): consumir `lib/occ_bridge.sh::occ_run` (D3.1); --json/--payload-stdin/--staging-id; client-lock check; sem --async (sync only) | `bash` + `bats` | D3.1, 4.2 |
+| [x] | M | 4.2 — client-lock: `lib/job_queue.sh::client_lock_acquire/release/renew` (criados em D1.7); wiring em worker.sh (acquire antes de exec mutavel) e manage-cli (acquire antes de occ-exec mutavel; exit 17 se ocupado) | `bash` + `bats` | D2.3 |
+| [x] | M | 4.3 — health-command: `manage.sh health [--json]` com 8 checks paralelos (timeout 5s cada): containers shared, Traefik certs, DNS fixos, recording welcome, harp-via-socket-proxy, disco /opt, redis queue, worker active | `bash` + `bats` | D2.3 |
+| [x] | M | 4.4 — socket-proxy migrado: adicionar service no shared-services/docker-compose.yml (artefato ja em shared-services/socket-proxy/.env.example); cmd_create gera template HaRP com tcp://socket-proxy:2375; subcomando `manage.sh upgrade-harp <cliente>` migra clientes existentes; smoke test ExApp install em CI | `bash` + `docker compose` + `bats` | D2.4 |
+| [x] | M | 4.5 — secrets-file: `setup-shared.sh` cria `/opt/shared-services/secrets/*` (0600); compose usa `secrets:`/_FILE quando suportado; runtime export para imagens sem _FILE; remover plaintext de .env | `bash` + `docker compose` + `bats` | D2.4 |
+| [x] | P | 4.6 — Editar `journald.conf.d/50-nextcloud-saas.conf` (criado em D2.6) para incluir tag occ-exec na retencao | `bash` | D2.6 |
+| [x] | M | 4.7 — Tests integration occ-exec + client-lock + health: allowlist + bloqueio + parsed_result + concurrencia worker/cli + 8 checks health | `bats` | 4.1..4.5 |
+| [x] | P | 4.8 — Atualizar `docs/TROUBLESHOOTING.md` (secoes Worker, Socket-proxy, SSH ncsaas-api, OCC-exec) + `docs/ADMINISTRATION.md` (operacao occ-exec) | `bash` (manual edit) | 4.1..4.7 |
 
 **Notas tecnicas (tarefas M):**
 

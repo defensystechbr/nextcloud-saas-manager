@@ -182,3 +182,50 @@ Motivo: follow-up informou conclusao da D3, mas o estado local nao confirma: `do
 - `tests/integration/test_inbox_staging.bats` — 8 testes (metadata create/get/consume/delete, staging file moves, limites de tamanho).
 - `tests/integration/test_feature_o.bats` — 20 testes (user/group/apps lifecycle, --async required, --payload-stdin, idempotency-key, --backup-first, --confirm, occ-exec → not_implemented_yet em D4).
 - `docs/CONTRACTS.md` — entrada Historico de Revisoes 2026-05-08 (revisao 0.4) confirmando conformidade implementacao ↔ contrato; schema_version="1" mantido.
+
+---
+
+## Transição Autopilot — D3 → D4 — 2026-05-08T19:19:12-03:00
+
+- Escopo ativado: `sprint_list=["D4", "D5"]`, categoria `D`, `validate_between=true`.
+- Estado base: D3 aprovada (`validation_gate=APROVADA`, blockers `[]`), commit `c2782cb` com fixes `F-D3-001..003`.
+- Hard stop antigo de D3 resolvido e removido do estado ativo do autopilot.
+- Próxima execução: Sprint D4 — Feature P + hardening.
+
+## Sprint D4 — CONCLUIDA — Feature P + Hardening
+
+**Branch**: `pipeline/2026-05-08`  
+**Data**: 2026-05-08  
+**Review**: senior+qa (self-audit autopilot, sem findings CRITICAL/HIGH)
+
+### Tasks completadas (8/8)
+
+| Task | Status | Artefato |
+|------|--------|----------|
+| 4.1 — `occ-exec` publico sync | DONE | `scripts/manage.sh::cmd_occ_exec`, `scripts/lib/dispatch.sh` |
+| 4.2 — client-lock worker/CLI | DONE | `scripts/lib/occ_bridge.sh`, `scripts/worker.sh`, `tests/integration/test_feature_p_hardening.bats` |
+| 4.3 — `manage.sh health --json` | DONE | `scripts/lib/health_checks.sh`, `scripts/manage.sh::cmd_health` |
+| 4.4 — socket-proxy + `upgrade-harp` | DONE | `shared-services/docker-compose.yml`, `scripts/manage.sh::cmd_upgrade_harp` |
+| 4.5 — secrets-file | DONE | `shared-services/setup-shared.sh` (`/opt/shared-services/secrets/*`, `.env` com `*_FILE`) |
+| 4.6 — journald occ-exec retention | DONE | `journald.conf.d/50-nextcloud-saas.conf` ja continha tag `nextcloud-saas-occ-exec` |
+| 4.7 — tests integration D4 | DONE | `tests/integration/test_feature_p_hardening.bats` + regressao D3/D4 |
+| 4.8 — docs operacionais | DONE | `docs/ADMINISTRATION.md`, `docs/TROUBLESHOOTING.md`, `docs/DIARY.md` |
+
+### Evidencia de validacao
+
+- `bash -n scripts/manage.sh scripts/lib/dispatch.sh scripts/lib/health_checks.sh scripts/lib/occ_bridge.sh scripts/lib/job_queue.sh scripts/worker.sh shared-services/setup-shared.sh` = PASS
+- `make shellcheck` = PASS
+- `shellcheck --severity=warning --shell=bash shared-services/setup-shared.sh` = PASS
+- `npm exec --yes --package bats -- bats --tap tests/integration/test_feature_p_hardening.bats` = 5/5 PASS
+- `npm exec --yes --package bats -- bats --tap tests/integration/test_manage_async_dispatch.bats tests/integration/test_feature_o.bats tests/integration/test_occ_bridge.bats tests/integration/test_worker_loop.bats` = 62/62 PASS
+- `npm exec --yes --package bats -- bats --tap --recursive tests/unit tests/integration` = 196/196 PASS
+
+### Findings
+
+CRITICAL/HIGH/MEDIUM/LOW novos: 0.  
+Hard stops: nenhum.
+
+### Proxima execucao
+
+Autopilot deve seguir para Sprint D5 (estabilizacao + polish + deploy v12.0).
+
