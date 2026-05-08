@@ -195,6 +195,7 @@ Motivo: follow-up informou conclusao da D3, mas o estado local nao confirma: `do
 ## Sprint D4 — CONCLUIDA — Feature P + Hardening
 
 **Branch**: `pipeline/2026-05-08`  
+**Commits**: `ca8b6b6 feat(sprint-D4): Feature P occ-exec and hardening`, `44b2e5b docs(sprint-D4): finalize autopilot checkpoint`  
 **Data**: 2026-05-08  
 **Review**: senior+qa (self-audit autopilot, sem findings CRITICAL/HIGH)
 
