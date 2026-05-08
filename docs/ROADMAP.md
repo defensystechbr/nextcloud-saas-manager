@@ -34,8 +34,9 @@
 | Sprint | Categoria | Gate (resumo) | Status | Tasks | Modulos | Resumo | Linhas |
 |--------|-----------|---------------|--------|-------|---------|--------|--------|
 | D1 | D | tests/unit + tests/integration verde no CI; lib/*.sh extraido sem mudar comportamento | **concluida** | 11/11 | tests-bats, ci-shellcheck, manage-cli (refactor base) | Foundation: testes + CI + extracao de lib | 102-617 |
-| D2 | D | API consegue create --async --json em <2s via SSH; worker executa real; callback HMAC dispara; idempotency 24h | **concluida** | 11/11 | manage-cli (parte 2), idempotency, worker, ssh-gateway, observability, queue-introspection | Async core: queue + worker + SSH + observabilidade | 618-1532 |
-| D3 | D | API consegue user/group/apps lifecycle async via SSH; SCP staging funciona em jail; senha nunca em journald | pendente | 8 | inbox-staging, user-group-apps, occ-bridge (Parte 1) | Feature O: lifecycle de users/groups/apps + SCP staging + occ-bridge interno | 1533-2216 |
+| D2 | D | API consegue create --async --json em <2s via SSH; worker executa real; callback HMAC dispara; idempotency 24h | **aprovada via F1** | 11/11 | manage-cli (parte 2), idempotency, worker, ssh-gateway, observability, queue-introspection | Async core: queue + worker + SSH + observabilidade | 618-1532 |
+| F1 | F | Revalidar D2 sem CRITICAL/HIGH: CLI/worker iniciam, JSON de job state valido, senha/callback seguros, testes D2 coerentes | **concluida** | 7/7 | manage-cli, job_queue, worker, dispatch, tests, validation-env | Fix gate D2: corrigir blockers F-D2-001..007 antes de D3 | 1533-1592 |
+| D3 | D | API consegue user/group/apps lifecycle async via SSH; SCP staging funciona em jail; senha nunca em journald | pendente | 8 | inbox-staging, user-group-apps, occ-bridge (Parte 1) | Feature O: lifecycle de users/groups/apps + SCP staging + occ-bridge interno | 1593-2276 |
 | D4 | D | occ-exec sync passthrough em <60s; client-lock impede concorrencia; health 8 checks <10s; socket-proxy interposto; secrets em /opt/.../secrets | pendente | 8 | occ-bridge (Parte 2), client-lock, health-command, socket-proxy, secrets-file | Feature P + hardening: occ-exec + client-lock + health + socket-proxy + secrets | 2217-2650 |
 | D5 | D | E2E docker-in-docker passa; auditorias verde; ADRs registradas; deploy staging validado; tag v12.0 publicado | pendente | 10 | docs, ADRs, e2e, auditorias | Estabilizacao + polish + deploy v12.0 | 2651-2763 |
 
@@ -1527,6 +1528,31 @@
 
     NUNCA depender de internet — tudo via localhost.
 </details>
+
+---
+
+## Sprint F1 — Fix Gate D2 (Async Core)
+> Categoria: F
+> Origem: `/qa validar` da Sprint D2 em 2026-05-08, registrado em `docs/FINDINGS.md`.
+> Gate: D2 so pode ser considerada aprovada quando `docs/FINDINGS.md` tiver `F-D2-001..F-D2-006` como `FIXED`, `F-D2-007` com evidencia de CI/ambiente provisionado ou `DEFERRED` justificado, e os smokes `MANAGE_SKIP_ROOT_CHECK=1 bash scripts/manage.sh help`, `WORKER_TEST_MODE=1 bash scripts/worker.sh`, `bash -n scripts/*.sh scripts/lib/*.sh`, suites Bats D2, ShellCheck e Redis fixture estiverem verdes no ambiente disponivel.
+> review: senior+qa
+
+| Status | Tamanho | Tarefa | Skill/Command | Depende de |
+|--------|---------|--------|---------------|------------|
+| [x] | P | F1.1 — Corrigir sobrescrita global de `SCRIPT_DIR` em `scripts/lib/job_queue.sh`, preservando startup de `manage.sh` e `worker.sh` | `bash` | F-D2-001 |
+| [x] | M | F1.2 — Substituir parser frágil de `get_state` por serializacao JSON segura para valores com aspas, barras e arrays (`args_json`) | `bash` + `jq` | F-D2-002, F-D1-002 |
+| [x] | P | F1.3 — Garantir bloqueio de `--password=*` antes da remoção de flags/posicionais, cobrindo `manage.sh`, `dispatch.sh` e shim SSH | `bash` | F-D2-003 |
+| [x] | P | F1.4 — Separar audit NDJSON do JSON contratual de enqueue para que `--async --json` emita uma unica raiz `EnqueuedJob` em stdout | `bash` + `jq` | F-D2-004 |
+| [x] | P | F1.5 — Tornar callback HMAC fail-closed: sem secret real, nao enviar POST autenticado como `unsigned`; registrar erro claro no job | `bash` + `openssl` | F-D2-005 |
+| [x] | P | F1.6 — Atualizar testes D2 de idempotência para assinatura atual de `idem_check <key> <args_hash> <job_id>` e retorno `same:<job_id>` | `bats` | F-D2-006 |
+| [x] | P | F1.7 — Reexecutar gate D2 em CI ou ambiente provisionado com `bats`, `shellcheck`, `redis-cli` e Docker; anexar evidencia em `docs/FINDINGS.md`/`docs/AUTOPILOT-REPORT.md` | `bash` + CI | F-D2-007, F1.1-F1.6 |
+
+**Notas de execução:**
+
+- A Sprint F1 tem escopo corretivo: nao iniciar D3 enquanto houver `CRITICAL` ou `HIGH` aberto para D2.
+- Prioridade obrigatoria: F1.1 e F1.2 primeiro, porque destravam os smokes basicos e a introspecao de jobs usada pelas demais validacoes.
+- Ao concluir cada tarefa, atualizar o finding correspondente em `docs/FINDINGS.md` para `FIXED` com evidencia curta do comando executado.
+- Se o ambiente local continuar sem `bats`/`shellcheck`/`redis-cli`/Docker, F1.7 deve registrar claramente qual evidencia veio de CI e qual continua indisponivel localmente.
 
 ---
 

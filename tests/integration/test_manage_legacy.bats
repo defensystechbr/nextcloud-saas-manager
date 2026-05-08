@@ -4,8 +4,8 @@
 # Budget: 10 testes
 
 load '../helpers/setup'
-load 'bats-support/load'
-load 'bats-assert/load'
+load '../lib/bats-support/load'
+load '../lib/bats-assert/load'
 
 setup() {
   # Fixtures mock no PATH (docker, redis-cli)

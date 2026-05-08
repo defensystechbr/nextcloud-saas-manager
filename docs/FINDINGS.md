@@ -70,3 +70,108 @@ Auditado em: 2026-05-07 | Auditor: sprint-init pipeline
 | INFO      | 3     | ACCEPTED/DEFERRED |
 
 **Conclusão**: Sprint D1 APROVADA para merge. Sem bloqueadores. 2 Low + 3 Info deferidos para D2.
+
+---
+
+## Sprint D2 — Async Core (Queue + Worker + SSH + Observabilidade)
+
+Validado em: 2026-05-08 | Validador: `/qa validar`
+
+---
+
+### [F-D2-001] CRITICAL — `manage.sh` e `worker.sh` falham no startup por sobrescrita de `SCRIPT_DIR`
+
+- **Arquivo**: `scripts/manage.sh`, `scripts/worker.sh`, `scripts/lib/job_queue.sh`
+- **Descrição**: `manage.sh` e `worker.sh` calculam `SCRIPT_DIR` apontando para `scripts/`, mas ao fazer `source scripts/lib/job_queue.sh`, esse arquivo redefine a variável global `SCRIPT_DIR` para `scripts/lib`. O próximo `source "${SCRIPT_DIR}/lib/job_runner.sh"` passa a resolver `scripts/lib/lib/job_runner.sh`, que não existe.
+- **Evidência**: `MANAGE_SKIP_ROOT_CHECK=1 bash scripts/manage.sh help` e `WORKER_TEST_MODE=1 bash scripts/worker.sh` retornam exit 1 com `scripts/lib/lib/job_runner.sh: Arquivo ou diretório inexistente`.
+- **Impacto**: Quebra o gate D2 inteiro: CLI não inicia, worker daemon não inicia, SSH shim não consegue invocar `nextcloud-manage`, `worker status`/`job status` não funcionam.
+- **Status**: FIXED — 2026-05-08 (`MANAGE_SCRIPT_DIR`/`WORKER_SCRIPT_DIR` + variáveis de lib isoladas; `manage.sh help` e `WORKER_TEST_MODE=1 worker.sh` retornam exit 0)
+
+---
+
+### [F-D2-002] CRITICAL — `get_state` gera JSON inválido para jobs async reais com `args_json`
+
+- **Arquivo**: `scripts/lib/job_queue.sh::get_state`
+- **Descrição**: `get_state` converte `HGETALL` para JSON via `awk` concatenando `"key":"value"` sem escapar aspas, barras ou quebras de linha. D2 grava `args_json` como array JSON stringificado no hash Redis, por exemplo `["nextcloud-manage","acme",...]`; esse valor quebra o JSON produzido por `get_state` antes do `jq -c .`.
+- **Impacto**: `job status`, `job list` e o worker podem falhar ao ler jobs reais enfileirados, violando o gate D2 de job introspection e worker pickup.
+- **Status**: FIXED — 2026-05-08 (`get_state` usa `redis-cli --raw` + `jq -Rnc`; simulação com `args_json` e aspas validada via `jq -e`)
+
+---
+
+### [F-D2-003] HIGH — `--password=*` é removido antes da validação de segurança
+
+- **Arquivo**: `scripts/manage.sh`, `scripts/lib/dispatch.sh`
+- **Descrição**: `manage.sh` remove argumentos `--*` ao montar `POSITIONAL`; depois chama `dispatch_namespace_cmd`/`dispatch_legacy_cmd` apenas com os posicionais. As checagens `has_password_in_argv` em `dispatch.sh` não recebem `--password=secret`.
+- **Impacto**: Viola o Quality Constraint D2: `--password=*` em argv deve retornar exit 5 e orientar `--payload-stdin`. Risco LGPD/secret leakage quando a CLI voltar a iniciar.
+- **Status**: FIXED — 2026-05-08 (`parse_global_flags` valida `has_password_in_argv "$@"` antes da extração de posicionais; validação local retorna exit 5)
+
+---
+
+### [F-D2-004] HIGH — `--async --json` mistura evento de audit e `EnqueuedJob` em stdout
+
+- **Arquivo**: `scripts/lib/dispatch.sh::dispatch_enqueue`, `scripts/lib/output_json.sh::log_event`
+- **Descrição**: `dispatch_enqueue` chama `log_event notice enqueue ...` antes de `_build_enqueued_job`. `log_event` imprime NDJSON em stdout; `_build_enqueued_job` também imprime o JSON contratual. O consumidor pode receber duas raízes JSON no stdout.
+- **Impacto**: Quebra o contrato do gate D2: API REST deve receber um único `EnqueuedJob` JSON em menos de 2s.
+- **Status**: FIXED — 2026-05-08 (`dispatch_enqueue` envia `log_event` para stderr; stdout fica reservado ao `EnqueuedJob`)
+
+---
+
+### [F-D2-005] HIGH — Callback pode ser enviado sem HMAC real quando secret está ausente
+
+- **Arquivo**: `scripts/worker.sh::_fire_callback`
+- **Descrição**: Se `_read_callback_secret` retorna vazio, `_fire_callback` usa `X-Signature: sha256=unsigned` e envia o POST mesmo assim.
+- **Impacto**: Degrada silenciosamente callback autenticado para callback não autenticado, violando o contrato HMAC-SHA256 da Sprint D2.
+- **Status**: FIXED — 2026-05-08 (`_fire_callback` falha rápido com `missing_callback_secret`; fallback `sha256=unsigned` removido)
+
+---
+
+### [F-D2-006] HIGH — Testes D2 de idempotência estão incompatíveis com a assinatura atual
+
+- **Arquivo**: `tests/integration/test_job_queue.bats`, `scripts/lib/job_queue.sh::idem_check`
+- **Descrição**: `idem_check` agora exige 3 argumentos (`key`, `args_hash`, `job_id`) e retorna `same:<job_id>`, mas `test_job_queue.bats` ainda chama com 2 argumentos e espera `same`.
+- **Impacto**: A suíte Bats de integração deve falhar quando executada, bloqueando confiança nos cenários D2.2.
+- **Status**: FIXED — 2026-05-08 (`test_job_queue.bats` atualizado para `idem_check <key> <hash> <job_id>` e `same:<job_id>`; adicionada cobertura para `args_json` em `get_state`)
+
+---
+
+### [F-D2-007] HIGH — Ambiente local não consegue executar o gate dinâmico da Sprint D2
+
+- **Arquivo**: ambiente de validação
+- **Descrição**: `bats`, `shellcheck` e `redis-cli` não estão no PATH; Docker também não está disponível (`/var/run/docker.sock` ausente). Só foi possível executar `bash -n` e validações estáticas.
+- **Impacto**: Não há evidência local de `bats integration verde`, `shellcheck warning-clean`, Redis fixture ou worker/callback end-to-end. A validação dinâmica deve rodar em CI/ambiente provisionado antes de qualquer merge/release.
+- **Status**: FIXED — 2026-05-08 (revalidado com Docker daemon disponível fora do sandbox: `timeout 240 npm exec --yes --package bats -- bats --tap --recursive tests/integration` = 96/96 PASS; `make shellcheck` = PASS; `tests/sanity.bats` = 1/1 PASS; `tests/unit` = 50/50 PASS)
+
+---
+
+### [F-D2-008] MEDIUM — `make shellcheck` mascarava ausência do ShellCheck
+
+- **Arquivo**: `Makefile`
+- **Descrição**: O alvo `shellcheck` terminava com `|| true`, então retornava sucesso mesmo quando `shellcheck` não existia ou quando houvesse warnings.
+- **Impacto**: O gate local de ShellCheck podia dar falso positivo, contrariando o gate D1/D2 de warning-clean.
+- **Status**: FIXED — 2026-05-08 (`|| true` removido; `make shellcheck` agora falha com exit 2 quando `shellcheck` está ausente)
+
+---
+
+### [F-D2-009] HIGH — `job list` e `worker stats` travam quando Redis/`redis-cli` está indisponível
+
+- **Arquivo**: `scripts/lib/job_queue.sh::job_list`, `scripts/lib/job_queue.sh::worker_stats`
+- **Descrição**: Os loops baseados em `SCAN` não tratam falha ou saída vazia de `_redis_cli SCAN`. Quando Redis/`redis-cli` não responde, o cursor fica vazio e o loop não atinge `0`, deixando comandos de introspecção pendurados até timeout.
+- **Evidência**: `timeout 5 bash scripts/manage.sh job list --json` retornou exit 124 sem output; `timeout 5 env MANAGE_SKIP_ROOT_CHECK=1 bash scripts/manage.sh worker stats --json` retornou exit 124 sem output.
+- **Impacto**: Bloqueia o gate D2/F1 de introspecção (`job list`, `worker stats`) e pode travar consumidores SSH/API em vez de retornar erro JSON claro quando a fila Redis está indisponível.
+- **Status**: FIXED — 2026-05-08 (`job_list` e `worker_stats` validam retorno de `SCAN`; comandos retornam `redis_unavailable` em <5s; `npx --yes bats --tap --recursive tests/unit` = 50/50 PASS).
+
+---
+
+## Resumo D2
+
+| Severidade | Count | Status |
+|-----------|-------|--------|
+| CRITICAL  | 2     | FIXED |
+| HIGH      | 4     | FIXED |
+| HIGH      | 1     | FIXED (`F-D2-007`) |
+| MEDIUM    | 1     | FIXED |
+| LOW       | 0     | — |
+
+**Conclusão inicial**: Sprint D2 REPROVADA. Bloqueadores impediam aprovação: CLI/worker não iniciavam, JSON de job state era inválido para jobs reais, contrato de segurança de senha/callback era violado e a suíte dinâmica não pôde ser executada no ambiente atual.
+
+**Revalidação final 2026-05-08**: F-D2-001..F-D2-009 corrigidos ou revalidados. Evidência do gate: `make shellcheck` PASS; `npm exec --yes --package bats -- bats --tap tests/sanity.bats` = 1/1 PASS; `npm exec --yes --package bats -- bats --tap --recursive tests/unit` = 50/50 PASS; `timeout 240 npm exec --yes --package bats -- bats --tap --recursive tests/integration` com Docker daemon disponível = 96/96 PASS. F-D2-007 fechado com validação dinâmica local usando Redis fixture via Docker.

@@ -104,6 +104,7 @@ occ_is_allowed() {
 
   local pattern
   for pattern in "${OCC_BLOCKLIST[@]}"; do
+    # shellcheck disable=SC2254 # OCC_BLOCKLIST entries are intentional glob patterns.
     case "$subcmd" in
       ${pattern}) return 1 ;;
     esac

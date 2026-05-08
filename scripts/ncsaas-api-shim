@@ -101,8 +101,6 @@ readonly SHIM_ALLOWED_NAMESPACES=(
 readonly SHIM_ALLOWED_VERBS_USER=(create remove modify)
 readonly SHIM_ALLOWED_VERBS_GROUP=(create remove modify)
 readonly SHIM_ALLOWED_VERBS_APPS=(enable disable)
-# occ-exec: subcmd validado pelo occ_bridge (allowlist interna); shim permite passagem
-readonly SHIM_ALLOWED_VERBS_OCCE=(*)
 
 _in_array() {
   local needle="$1"
@@ -174,4 +172,10 @@ fi
 _audit_log notice \
   "{\"event\":\"accept\",\"key_id\":\"${KEY_ID}\",\"client_ip\":\"${CLIENT_IP}\",\"command\":\"${_ORIG_SANITIZED}\"}"
 
-exec sudo -n /usr/local/bin/nextcloud-manage "${REAL_ARGS[@]+"${REAL_ARGS[@]}"}"
+NEXTCLOUD_MANAGE_BIN="${NEXTCLOUD_MANAGE_BIN:-}"
+if [[ -z "$NEXTCLOUD_MANAGE_BIN" ]]; then
+  NEXTCLOUD_MANAGE_BIN="$(command -v nextcloud-manage 2>/dev/null || true)"
+fi
+NEXTCLOUD_MANAGE_BIN="${NEXTCLOUD_MANAGE_BIN:-/usr/local/bin/nextcloud-manage}"
+
+exec sudo -n "$NEXTCLOUD_MANAGE_BIN" "${REAL_ARGS[@]+"${REAL_ARGS[@]}"}"

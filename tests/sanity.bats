@@ -3,8 +3,8 @@
 # Verifica que helpers e bats-assert funcionam corretamente.
 
 load 'helpers/setup'
-load 'bats-support/load'
-load 'bats-assert/load'
+load 'lib/bats-support/load'
+load 'lib/bats-assert/load'
 
 @test "sanity: assert_equal funciona" {
   assert_equal "1" "1"

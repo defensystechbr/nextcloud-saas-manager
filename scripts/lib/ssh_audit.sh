@@ -7,11 +7,11 @@ readonly SSH_AUDIT_SH_SOURCED=1
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SSH_AUDIT_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/lib/output_json.sh
-source "${SCRIPT_DIR}/output_json.sh"
+source "${SSH_AUDIT_LIB_DIR}/output_json.sh"
 # shellcheck source=scripts/lib/validators.sh
-source "${SCRIPT_DIR}/validators.sh"
+source "${SSH_AUDIT_LIB_DIR}/validators.sh"
 
 # Allowlist de eventos válidos
 readonly AUDIT_EVENTS=(

@@ -10,8 +10,10 @@ set -euo pipefail
 
 # Dependências
 # shellcheck source=scripts/lib/validators.sh
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "${SCRIPT_DIR}/validators.sh"
+JOB_QUEUE_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${JOB_QUEUE_LIB_DIR}/validators.sh"
+# shellcheck source=scripts/lib/output_json.sh
+source "${JOB_QUEUE_LIB_DIR}/output_json.sh"
 
 # ============================================================
 # Configuração Redis — via env vars (sem state interno)
@@ -27,10 +29,42 @@ _redis_cli() {
   local db="${WORKER_REDIS_DB:-16}"
   local pass="${WORKER_REDIS_PASS:-}"
 
-  local args=(-h "$host" -p "$port" -n "$db" --no-raw)
+  local args=(-h "$host" -p "$port" -n "$db" --raw)
   [[ -n "$pass" ]] && args+=(-a "$pass")
 
   redis-cli "${args[@]}" "$@"
+}
+
+_redis_raw_cli() {
+  local host="${WORKER_REDIS_HOST:-127.0.0.1}"
+  local port="${WORKER_REDIS_PORT:-6379}"
+  local db="${WORKER_REDIS_DB:-16}"
+  local pass="${WORKER_REDIS_PASS:-}"
+
+  local args=(-h "$host" -p "$port" -n "$db" --raw)
+  [[ -n "$pass" ]] && args+=(-a "$pass")
+
+  redis-cli "${args[@]}" "$@"
+}
+
+_scan_jobs_page() {
+  local cursor="${1:?_scan_jobs_page: cursor obrigatorio}"
+  local scan_result
+
+  if ! scan_result="$(_redis_cli SCAN "$cursor" MATCH "nc:jobs:*" COUNT 1000 2>/dev/null)" || \
+     [[ -z "${scan_result//[[:space:]]/}" ]]; then
+    echo "redis_scan_failed" >&2
+    return 1
+  fi
+
+  local new_cursor
+  new_cursor="$(printf '%s\n' "$scan_result" | sed -n '1p' | tr -d ' ')"
+  if [[ ! "$new_cursor" =~ ^[0-9]+$ ]]; then
+    echo "redis_scan_invalid_cursor" >&2
+    return 1
+  fi
+
+  printf '%s\n' "$scan_result"
 }
 
 # ============================================================
@@ -108,24 +142,20 @@ get_state() {
   local key="nc:jobs:${job_id}"
 
   local raw
-  raw="$(_redis_cli HGETALL "$key" 2>/dev/null)"
+  raw="$(_redis_raw_cli HGETALL "$key" 2>/dev/null)"
 
   if [[ -z "$raw" ]]; then
     echo "{}"
     return 0
   fi
 
-  # HGETALL retorna alternando field\nvalue (com --no-raw, separados por newline)
-  echo "$raw" | awk '
-    BEGIN { printf "{"; first=1 }
-    NR % 2 == 1 { key=$0 }
-    NR % 2 == 0 {
-      if (!first) printf ","
-      printf "\"" key "\":\"" $0 "\""
-      first=0
-    }
-    END { printf "}" }
-  ' | jq -c .
+  # HGETALL retorna field/value em linhas alternadas. `jq -Rn` preserva
+  # escaping correto para valores que ja sejam JSON serializado (args_json).
+  printf '%s\n' "$raw" | jq -Rnc '
+    [inputs] as $items
+    | reduce range(0; ($items | length); 2) as $i
+        ({}; . + {($items[$i]): ($items[$i + 1] // "")})
+  '
 }
 
 # ============================================================
@@ -333,12 +363,12 @@ worker_stats() {
 
   while true; do
     local scan_result
-    scan_result="$(_redis_cli SCAN "$cursor" MATCH "nc:jobs:*" COUNT 1000 2>/dev/null)"
+    scan_result="$(_scan_jobs_page "$cursor")" || return 1
 
     local new_cursor
-    new_cursor="$(echo "$scan_result" | head -1 | tr -d ' ')"
+    new_cursor="$(printf '%s\n' "$scan_result" | sed -n '1p' | tr -d ' ')"
     local keys
-    keys="$(echo "$scan_result" | tail -n +2)"
+    keys="$(printf '%s\n' "$scan_result" | sed '1d')"
 
     while IFS= read -r key; do
       [[ -z "$key" ]] && continue
@@ -411,16 +441,15 @@ job_list() {
 
   local cursor=0
   local results=()
-  local scanned=0
 
   while true; do
     local scan_result
-    scan_result="$(_redis_cli SCAN "$cursor" MATCH "nc:jobs:*" COUNT 1000 2>/dev/null)"
+    scan_result="$(_scan_jobs_page "$cursor")" || return 1
 
     local new_cursor
-    new_cursor="$(echo "$scan_result" | head -1 | tr -d ' ')"
+    new_cursor="$(printf '%s\n' "$scan_result" | sed -n '1p' | tr -d ' ')"
     local keys
-    keys="$(echo "$scan_result" | tail -n +2)"
+    keys="$(printf '%s\n' "$scan_result" | sed '1d')"
 
     while IFS= read -r key; do
       [[ -z "$key" ]] && continue
@@ -463,6 +492,7 @@ job_list() {
     [[ $first -eq 0 ]] && json+=","
     local job_raw
     job_raw="$(get_state "$jid" 2>/dev/null || echo "{}")"
+    job_raw="$(printf '%s\n' "$job_raw" | jq -c --arg job_id "$jid" '. + {job_id: (.job_id // $job_id)}')"
     json+="$job_raw"
     first=0
   done

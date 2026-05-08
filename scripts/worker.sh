@@ -10,21 +10,21 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+WORKER_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # ============================================================
 # Libs
 # ============================================================
 # shellcheck source=scripts/lib/validators.sh
-source "${SCRIPT_DIR}/lib/validators.sh"
+source "${WORKER_SCRIPT_DIR}/lib/validators.sh"
 # shellcheck source=scripts/lib/output_json.sh
-source "${SCRIPT_DIR}/lib/output_json.sh"
+source "${WORKER_SCRIPT_DIR}/lib/output_json.sh"
 # shellcheck source=scripts/lib/job_queue.sh
-source "${SCRIPT_DIR}/lib/job_queue.sh"
+source "${WORKER_SCRIPT_DIR}/lib/job_queue.sh"
 # shellcheck source=scripts/lib/job_runner.sh
-source "${SCRIPT_DIR}/lib/job_runner.sh"
+source "${WORKER_SCRIPT_DIR}/lib/job_runner.sh"
 # shellcheck source=scripts/lib/ssh_audit.sh
-source "${SCRIPT_DIR}/lib/ssh_audit.sh"
+source "${WORKER_SCRIPT_DIR}/lib/ssh_audit.sh"
 
 # ============================================================
 # Configuração (via env ou defaults)
@@ -132,6 +132,11 @@ _fire_callback() {
 
   local secret
   secret="$(_read_callback_secret)"
+  if [[ -z "$secret" ]]; then
+    audit_worker callback_failed error "$job_id" reason "missing_callback_secret"
+    set_state "$job_id" failed callback_failed "true" callback_error "missing_callback_secret"
+    return 1
+  fi
 
   # Construir payload JSON (schema_version=1)
   local ts
@@ -145,11 +150,7 @@ _fire_callback() {
 
   # Calcular assinatura HMAC-SHA256
   local signature
-  if [[ -n "$secret" ]]; then
-    signature="sha256=$(printf '%s' "$payload" | openssl dgst -sha256 -hmac "$secret" -hex 2>/dev/null | awk '{print $NF}')"
-  else
-    signature="sha256=unsigned"
-  fi
+  signature="sha256=$(printf '%s' "$payload" | openssl dgst -sha256 -hmac "$secret" -hex 2>/dev/null | awk '{print $NF}')"
 
   # Retry exponencial com backoff configurável
   local attempt=0
@@ -370,26 +371,28 @@ main_loop() {
 # Inicialização
 # ============================================================
 
-# Não executar como daemon em modo de teste
-if [[ "${WORKER_TEST_MODE:-0}" == "1" ]]; then
-  log_event notice worker_test_mode pid "$_WORKER_PID"
-  exit 0
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  # Não executar como daemon em modo de teste
+  if [[ "${WORKER_TEST_MODE:-0}" == "1" ]]; then
+    log_event notice worker_test_mode pid "$_WORKER_PID"
+    exit 0
+  fi
+
+  # Adquirir flock (defesa primária contra múltiplas instâncias)
+  _acquire_flock
+
+  # Adquirir Redis worker lock
+  if ! worker_lock_acquire "$_WORKER_PID"; then
+    log_event warning worker_startup pid "$_WORKER_PID" reason "redis_lock_conflict_startup"
+    exit 1
+  fi
+
+  # Limpar job stale de crash anterior
+  _cleanup_stale_job
+
+  # Criar diretório de jobs
+  mkdir -p "$WORKER_JOBS_DIR" 2>/dev/null || true
+
+  # Iniciar loop principal
+  main_loop
 fi
-
-# Adquirir flock (defesa primária contra múltiplas instâncias)
-_acquire_flock
-
-# Adquirir Redis worker lock
-if ! worker_lock_acquire "$_WORKER_PID"; then
-  log_event warning worker_startup pid "$_WORKER_PID" reason "redis_lock_conflict_startup"
-  exit 1
-fi
-
-# Limpar job stale de crash anterior
-_cleanup_stale_job
-
-# Criar diretório de jobs
-mkdir -p "$WORKER_JOBS_DIR" 2>/dev/null || true
-
-# Iniciar loop principal
-main_loop

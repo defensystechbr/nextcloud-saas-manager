@@ -5,8 +5,8 @@
 
 load '../helpers/redis_fixture'
 load '../helpers/setup'
-load 'bats-support/load'
-load 'bats-assert/load'
+load '../lib/bats-support/load'
+load '../lib/bats-assert/load'
 
 setup() {
   start_redis_fixture
@@ -47,6 +47,20 @@ _uuid() {
   assert_equal "$state" "queued"
 }
 
+@test "enqueue + get_state: preserva args_json com aspas como JSON valido" {
+  local jid
+  jid="$(_uuid)"
+  local args_json='["nextcloud-manage","acme","cloud.acme.com","create","--json"]'
+
+  run enqueue "$jid" client "acme" cmd "create" state "queued" args_json "$args_json"
+  assert_success
+
+  run get_state "$jid"
+  assert_success
+  echo "$output" | jq -e . >/dev/null
+  assert_equal "$(echo "$output" | jq -r '.args_json')" "$args_json"
+}
+
 @test "set_state running: timestamps populados + EXPIRE setado" {
   local jid
   jid="$(_uuid)"
@@ -78,33 +92,44 @@ _uuid() {
 @test "idem_check: primeira chamada retorna 'new'" {
   local idem_key
   idem_key="$(_uuid)"
-  run idem_check "$idem_key" "hash_abc123"
+  local job_id
+  job_id="$(_uuid)"
+
+  run idem_check "$idem_key" "hash_abc123" "$job_id"
   assert_success
   assert_output "new"
 }
 
-@test "idem_check: segunda chamada com mesmo hash retorna 'same'" {
+@test "idem_check: segunda chamada com mesmo hash retorna 'same:<job_id>'" {
   local idem_key
   idem_key="$(_uuid)"
-  idem_check "$idem_key" "hash_abc123"
+  local job_id_1 job_id_2
+  job_id_1="$(_uuid)"
+  job_id_2="$(_uuid)"
 
-  run idem_check "$idem_key" "hash_abc123"
+  idem_check "$idem_key" "hash_abc123" "$job_id_1"
+
+  run idem_check "$idem_key" "hash_abc123" "$job_id_2"
   assert_success
-  assert_output "same"
+  assert_output "same:${job_id_1}"
 }
 
 @test "idem_check: segunda chamada com hash diferente retorna 'conflict'" {
   local idem_key
   idem_key="$(_uuid)"
-  idem_check "$idem_key" "hash_abc123"
+  local job_id_1 job_id_2
+  job_id_1="$(_uuid)"
+  job_id_2="$(_uuid)"
 
-  run idem_check "$idem_key" "hash_xyz999"
+  idem_check "$idem_key" "hash_abc123" "$job_id_1"
+
+  run idem_check "$idem_key" "hash_xyz999" "$job_id_2"
   assert_success
   assert_output "conflict"
 }
 
 @test "idem_check: chave inválida (não UUID) retorna 'invalid'" {
-  run idem_check "nao-e-um-uuid" "hash_abc"
+  run idem_check "nao-e-um-uuid" "hash_abc" "aaaaaaaa-0000-4000-a000-000000000001"
   assert_success
   assert_output "invalid"
 }

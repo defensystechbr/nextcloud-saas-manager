@@ -6,11 +6,11 @@ readonly JOB_RUNNER_SH_SOURCED=1
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+JOB_RUNNER_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/lib/output_json.sh
-source "${SCRIPT_DIR}/output_json.sh"
+source "${JOB_RUNNER_LIB_DIR}/output_json.sh"
 # shellcheck source=scripts/lib/validators.sh
-source "${SCRIPT_DIR}/validators.sh"
+source "${JOB_RUNNER_LIB_DIR}/validators.sh"
 
 # ============================================================
 # sanitize_log <log_path>
@@ -39,7 +39,7 @@ sanitize_log() {
 # Security: argv[0] DEVE ser "nextcloud-manage" (exit 5 caso contrário).
 # ============================================================
 run_job() {
-  local job_id="${1:?run_job: job_id obrigatorio}"
+  : "${1:?run_job: job_id obrigatorio}"
   local log_path="${2:?run_job: log_path obrigatorio}"
   shift 2
 
@@ -75,7 +75,7 @@ run_job() {
 
   # Executar com timeout — append stdout+stderr ao log
   timeout --signal=TERM --kill-after=30 "$timeout_sec" \
-    -- "${argv[@]}" --json --no-async-pickup \
+    "${argv[@]}" --json --no-async-pickup \
     >> "$log_path" 2>&1 || exit_code=$?
 
   # Sanitizar log após execução (mesmo em caso de falha)

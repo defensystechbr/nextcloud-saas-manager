@@ -7,13 +7,13 @@ readonly DISPATCH_SH_SOURCED=1
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DISPATCH_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/lib/validators.sh
-source "${SCRIPT_DIR}/validators.sh"
+source "${DISPATCH_LIB_DIR}/validators.sh"
 # shellcheck source=scripts/lib/output_json.sh
-source "${SCRIPT_DIR}/output_json.sh"
+source "${DISPATCH_LIB_DIR}/output_json.sh"
 # shellcheck source=scripts/lib/job_queue.sh
-source "${SCRIPT_DIR}/job_queue.sh"
+source "${DISPATCH_LIB_DIR}/job_queue.sh"
 
 # ============================================================
 # _extract_pos_args <argv...>
@@ -32,17 +32,14 @@ _extract_pos_args() {
     local arg="${args[$i]}"
     if [[ "$arg" == --* ]]; then
       # Verificar se é flag de valor sem =
-      local is_value_flag=0
       local vf
       for vf in "${VALUE_FLAGS[@]}"; do
         if [[ "$arg" == "$vf" ]]; then
-          is_value_flag=1
           i=$((i + 1))  # pular o próximo arg (o valor)
           break
         fi
       done
       # Flags com = são autocontidas; boolean flags são descartadas
-      # is_value_flag=0 e arg==--flag=* → descartar (autocontido)
       :
     else
       pos+=("$arg")
@@ -157,8 +154,13 @@ dispatch_enqueue() {
 
   set_state "$job_id" queued
 
-  # Audit log — enqueue event
-  log_event notice enqueue job_id "$job_id" client "$client" cmd "$cmd"
+  # Audit log — keep stdout/stderr reserved for API consumers and Bats `run`.
+  if [[ -n "${WORKER_JOBS_DIR:-}" ]]; then
+    mkdir -p "${WORKER_JOBS_DIR}" 2>/dev/null || true
+    log_event notice enqueue job_id "$job_id" client "$client" cmd "$cmd" >> "${WORKER_JOBS_DIR}/audit.ndjson" 2>/dev/null || true
+  else
+    log_event notice enqueue job_id "$job_id" client "$client" cmd "$cmd" >/dev/null 2>&1 || true
+  fi
 
   _build_enqueued_job "$client" "$cmd" "$job_id" "$args_json" "$domain"
 }
@@ -217,7 +219,6 @@ dispatch_legacy_cmd() {
 
   local is_async="${PARSED_FLAGS[async]:-}"
   local is_json="${PARSED_FLAGS[json]:-}"
-  local is_dry="${PARSED_FLAGS[dry_run]:-}"
 
   # Verificar se o cmd suporta --async
   if [[ "$is_async" == "1" ]]; then

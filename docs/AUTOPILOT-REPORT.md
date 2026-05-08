@@ -45,7 +45,7 @@
 - 3 workflows CI validados (bats, shellcheck, contracts-check)
 - manage.sh refatorado para invocar lib/*.sh mantendo compatibilidade legado
 
-## Sprint D2 — CONCLUIDA — Async Core (Queue + Worker + SSH + Observabilidade)
+## Sprint D2 — APROVADA VIA F1 — Async Core (Queue + Worker + SSH + Observabilidade)
 
 **Branch**: `sprint/D2`
 **Data**: 2026-05-08
@@ -66,6 +66,27 @@
 | 2.10 — Tests integration e2e async | DONE | 8 test files em `tests/integration/` |
 | 2.11 — Atualizar README + ADMINISTRATION | DONE | `README.md`, `docs/ADMINISTRATION.md` |
 
+### Findings D2 bloqueadores
+
+| ID | Severidade | Descricao | Status |
+|----|-----------|-----------|--------|
+| F-D2-001 | CRITICAL | `manage.sh` e `worker.sh` falham no startup por sobrescrita de `SCRIPT_DIR` | FIXED |
+| F-D2-002 | CRITICAL | `get_state` gera JSON invalido para jobs async reais com `args_json` | FIXED |
+| F-D2-003 | HIGH | `--password=*` e removido antes da validacao de seguranca | FIXED |
+| F-D2-004 | HIGH | `--async --json` mistura evento de audit e `EnqueuedJob` em stdout | FIXED |
+| F-D2-005 | HIGH | Callback pode ser enviado sem HMAC real quando secret esta ausente | FIXED |
+| F-D2-006 | HIGH | Testes D2 de idempotencia estao incompatíveis com a assinatura atual | FIXED |
+| F-D2-007 | HIGH | Ambiente local nao consegue executar o gate dinamico da Sprint D2 | FIXED |
+
+**CRITICAL/HIGH: 0** | **Bloqueadores: 0** | **Resultado: APROVADA via Sprint F1**
+
+### Evidencia de revalidacao F1
+
+- `make shellcheck` = PASS
+- `npm exec --yes --package bats -- bats --tap tests/sanity.bats` = 1/1 PASS
+- `npm exec --yes --package bats -- bats --tap --recursive tests/unit` = 50/50 PASS
+- `timeout 240 npm exec --yes --package bats -- bats --tap --recursive tests/integration` = 96/96 PASS (Docker daemon disponivel; Redis fixture via `redis:7-alpine`)
+
 ### Findings D1 herdados
 
 | ID | Severidade | Descricao | Status |
@@ -74,7 +95,7 @@
 | F-D1-002 | LOW | get_state awk parser nao escapa aspas | DEFERRED D3 |
 | F-D1-003 | INFO | worker_status "null" string vs JSON null | DEFERRED D3 |
 
-**CRITICAL/HIGH: 0** | **Bloqueadores: 0** | **Resultado: APROVADA**
+**CRITICAL/HIGH: 0** | **Bloqueadores: 0** | **Resultado: APROVADA via F1**
 
 ### Artefatos entregues
 
@@ -89,3 +110,9 @@
 - `scripts/manage.sh` — estendido para 914 LOC: dispatcher raiz com worker/job/client paths, parse_global_flags, namespace detection
 - 8 arquivos de teste integration Bats (async dispatch, idempotency, worker loop, worker callback, job management, ssh shim, observability, e2e async)
 - `README.md` + `docs/ADMINISTRATION.md` — secoes "Modo assincrono e API REST consumidora"
+
+## Sprint F1 — CONCLUIDA — Fix Gate D2
+
+**Origem**: `/pmo fix` apos `/qa validar` reprovar D2.
+**Bloqueadores corrigidos**: `F-D2-001` a `F-D2-007` (+ `F-D2-008`/`F-D2-009` detectados na revalidacao)
+**Proximo passo**: registrar commit da F1 e retomar D3.

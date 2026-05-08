@@ -11,25 +11,25 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+MANAGE_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # ============================================================
 # LIBS
 # ============================================================
 # shellcheck source=scripts/lib/validators.sh
-source "${SCRIPT_DIR}/lib/validators.sh"
+source "${MANAGE_SCRIPT_DIR}/lib/validators.sh"
 # shellcheck source=scripts/lib/output_json.sh
-source "${SCRIPT_DIR}/lib/output_json.sh"
+source "${MANAGE_SCRIPT_DIR}/lib/output_json.sh"
 # shellcheck source=scripts/lib/job_queue.sh
-source "${SCRIPT_DIR}/lib/job_queue.sh"
+source "${MANAGE_SCRIPT_DIR}/lib/job_queue.sh"
 # shellcheck source=scripts/lib/job_runner.sh
-source "${SCRIPT_DIR}/lib/job_runner.sh"
+source "${MANAGE_SCRIPT_DIR}/lib/job_runner.sh"
 # shellcheck source=scripts/lib/ssh_audit.sh
-source "${SCRIPT_DIR}/lib/ssh_audit.sh"
+source "${MANAGE_SCRIPT_DIR}/lib/ssh_audit.sh"
 # shellcheck source=scripts/lib/legacy_helpers.sh
-source "${SCRIPT_DIR}/lib/legacy_helpers.sh"
+source "${MANAGE_SCRIPT_DIR}/lib/legacy_helpers.sh"
 # shellcheck source=scripts/lib/dispatch.sh
-source "${SCRIPT_DIR}/lib/dispatch.sh"
+source "${MANAGE_SCRIPT_DIR}/lib/dispatch.sh"
 
 # ============================================================
 # CONFIGURAÇÃO GLOBAL
@@ -134,6 +134,7 @@ services:
       - MYSQL_DATABASE=${MYSQL_DATABASE}
       - MYSQL_USER=${MYSQL_USER}
       - NEXTCLOUD_ADMIN_USER=admin
+      - NEXTCLOUD_ADMIN_PASSWORD=${NEXTCLOUD_ADMIN_PASSWORD}
       - NEXTCLOUD_TRUSTED_DOMAINS=${DOMAIN}
       - REDIS_HOST=shared-redis
       - REDIS_HOST_PORT=6379
@@ -180,6 +181,17 @@ networks:
   proxy:
     external: true
 YML_EOF
+    cat > "${BASE_DIR}/${CLIENT_NAME}/.credentials" << CRED_EOF
+=== Credenciais da Instância: ${CLIENT_NAME} ===
+URL: https://${DOMAIN}
+Usuário: admin
+Senha: ${NEXTCLOUD_ADMIN_PASSWORD}
+Database: ${MYSQL_DATABASE}
+Database user: ${MYSQL_USER}
+Database password: ${MYSQL_PASSWORD}
+Redis DB: ${REDIS_DB}
+CRED_EOF
+    chmod 600 "${BASE_DIR}/${CLIENT_NAME}/.credentials"
 
     mkdir -p "${BASE_DIR}/${CLIENT_NAME}/harp-certs"
 
@@ -204,6 +216,8 @@ YML_EOF
     run_occ "$APP" config:system:set memcache.local --value="\\OC\\Memcache\\APCu"
     run_occ "$APP" config:system:set memcache.distributed --value="\\OC\\Memcache\\Redis"
     run_occ "$APP" config:system:set memcache.locking --value="\\OC\\Memcache\\Redis"
+    docker exec "$APP" bash -c 'mkdir -p /var/www/html/data/tmp && chown -R www-data:www-data /var/www/html/data/tmp && chmod 0770 /var/www/html/data/tmp'
+    run_occ "$APP" config:system:set tempdirectory --value="/var/www/html/data/tmp"
 
     run_occ "$APP" config:system:set trusted_proxies 0 --value="172.16.0.0/12"
     run_occ "$APP" config:system:set trusted_proxies 1 --value="192.168.0.0/16"
@@ -565,6 +579,8 @@ usage() {
     echo ""
     echo "Nextcloud SaaS Manager v12.0 (Arquitetura Compartilhada)"
     echo ""
+    echo "Uso:"
+    echo ""
     echo "Uso (legado posicional):"
     echo "  $(basename "$0") <cliente> <domínio> create     Criar nova instância (async-capable)"
     echo "  $(basename "$0") <cliente> _ status             Status da instância (sync)"
@@ -632,7 +648,14 @@ cmd_worker_stats() {
     done
 
     local result
-    result="$(worker_stats "$by_cmd" "$by_client")"
+    if ! result="$(worker_stats "$by_cmd" "$by_client")"; then
+        if [[ "$is_json" == "1" ]]; then
+            emit_error "redis_unavailable" "nao foi possivel consultar estatisticas da fila Redis"
+        else
+            log_error "Não foi possível consultar estatísticas da fila Redis"
+        fi
+        exit 1
+    fi
 
     if [[ "$is_json" == "1" ]]; then
         echo "$result"
@@ -726,7 +749,14 @@ cmd_job_list() {
     done
 
     local result
-    result="$(job_list "$state_filter" "$client_filter" "$cmd_filter" "$limit" "$offset")"
+    if ! result="$(job_list "$state_filter" "$client_filter" "$cmd_filter" "$limit" "$offset")"; then
+        if [[ "$is_json" == "1" ]]; then
+            emit_error "redis_unavailable" "nao foi possivel listar jobs na fila Redis"
+        else
+            log_error "Não foi possível listar jobs na fila Redis"
+        fi
+        exit 1
+    fi
 
     if [[ "$is_json" == "1" ]]; then
         echo "$result"
@@ -866,8 +896,8 @@ case "$TOKEN0" in
         fi
 
         # Verificar se TOKEN1 é namespace reservado
-        local _is_namespace=0
-        local _ns
+        _is_namespace=0
+        _ns=""
         for _ns in "${RESERVED_NAMESPACES[@]}"; do
             if [[ "$TOKEN1" == "$_ns" ]]; then
                 _is_namespace=1

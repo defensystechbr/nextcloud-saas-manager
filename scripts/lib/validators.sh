@@ -23,6 +23,7 @@ readonly ASYNC_ALLOWED=(
 )
 
 # Namespaces hierárquicos — token-2 deve ser checado ANTES de tratar como FQDN (CONTRACTS §3.6)
+# shellcheck disable=SC2034 # Consumido por callers apos source (manage.sh/dispatch.sh).
 readonly RESERVED_NAMESPACES=(user group apps occ-exec)
 
 # ============================================================
@@ -138,6 +139,11 @@ parse_global_flags() {
     [no_async_pickup]=""
   )
 
+  if has_password_in_argv "$@"; then
+    echo "parse_global_flags: --password em argv proibido; use --payload-stdin (password_in_argv_forbidden)" >&2
+    return 5
+  fi
+
   local args=("$@")
   local i=0
   while [[ $i -lt ${#args[@]} ]]; do
@@ -192,6 +198,12 @@ parse_global_flags() {
   # Validação: --callback requer --async
   if [[ -n "${PARSED_FLAGS[callback]}" && -z "${PARSED_FLAGS[async]}" ]]; then
     echo "parse_global_flags: --callback requer --async (callback_requires_async)" >&2
+    return 5
+  fi
+
+  # Validação: --idempotency-key só faz sentido no fluxo async
+  if [[ -n "${PARSED_FLAGS[idempotency_key]}" && -z "${PARSED_FLAGS[async]}" ]]; then
+    echo "parse_global_flags: --idempotency-key requer --async (idempotency_requires_async)" >&2
     return 5
   fi
 

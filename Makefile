@@ -33,4 +33,4 @@ shellcheck:
 	shellcheck --severity=warning --shell=bash --external-sources \
 	  scripts/manage.sh \
 	  scripts/deploy-server.sh \
-	  $$(find scripts/lib -name '*.sh' 2>/dev/null) || true
+	  $$(find scripts/lib -name '*.sh' 2>/dev/null)
