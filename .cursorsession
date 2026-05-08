@@ -619,26 +619,18 @@
   },
   "compact_count": 1,
   "autopilot": {
-    "active": false,
+    "active": true,
     "sprint_range": [
-      "D1",
-      "D2",
       "D3",
       "D4",
       "D5"
     ],
-    "started_at": "2026-05-07T22:37:00Z",
-    "completed_sprints": [
-      "D1",
-      "D2",
-      "F1"
-    ],
-    "hard_stops": [
-      "D2"
-    ],
-    "current_sprint": "F1"
+    "started_at": "2026-05-08T19:35:29Z",
+    "completed_sprints": [],
+    "hard_stops": [],
+    "current_sprint": "D3"
   },
-  "active_automation": null,
+  "active_automation": "pipeline",
   "validation_gate": {
     "sprint": "F1",
     "command": "/qa validar F1",
