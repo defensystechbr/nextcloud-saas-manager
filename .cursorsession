@@ -18,7 +18,7 @@
   "fase_nome": "Planejamento tecnico concluido (docs/ROADMAP.md gerado: 5 sprints D + 48 tasks + 4 critical Best-of-N; autopilot mode com auditoria entre sprints)",
   "usuarios_alvo": "Time DevOps interno operando servidor Ubuntu 24.04 com multiplas instancias Nextcloud SaaS, e API REST consumidora (em outro repo) que invoca via SSH",
   "prazo": null,
-  "ultimo_update": "2026-05-08T19:15:00Z",
+  "ultimo_update": "2026-05-08T19:30:00-03:00",
   "perfil_usuario": "tecnico",
   "principal_preocupacao": "Habilitar consumo do manage.sh por API REST externa via SSH com modo assincrono (fila + worker) sem bloquear a API durante operacoes longas; manter base Bash + Docker Compose intacta",
   "modulos": [
@@ -324,7 +324,7 @@
     "/arquiteto contratos",
     "/devops planejar"
   ],
-  "contexto_rapido": "Fase 7 (Infra/CI/CD materializados) concluida em 2026-05-07T21:24. /devops planejar gerou 12 artefatos (3 workflows GH Actions + 4 systemd units + 4 SSH/sudoers + 1 socket-proxy env + 1 occ-bridge skeleton + 1 INFRASTRUCTURE.md). Decisoes confirmadas via AskQuestion: (a) docs/INFRASTRUCTURE.md gerado como doc separado; (b) occ_bridge.sh skeleton com 35 entries OCC_ALLOWLIST (espelha CONTRACTS §3.10.1 exato — drift gate em contracts-check.yml); (c) CI-only por agora (CD via deploy-server.sh manual — Sprint S2). NAO modifiquei shared-services/docker-compose.yml (socket-proxy entra na Sprint S3 com cmd_create + upgrade-harp). NAO modifiquei scripts/deploy-server.sh (instalacao das units fica para Sprint S2). Predecessor: Fase 5 contratos REVISAO 0.3 com ~2400 linhas (10 secoes incluindo §10 Tradução de vocabulários), schema_version='1' permanece (mudanças Feature O/P forward-compatible). Aguarda /pmo plan para quebrar v12.0 em 4 sprints risk-first.",
+  "contexto_rapido": "Fase 7 (Infra/CI/CD materializados) concluida em 2026-05-07T21:24. /devops planejar gerou 12 artefatos (3 workflows GH Actions + 4 systemd units + 4 SSH/sudoers + 1 socket-proxy env + 1 occ-bridge skeleton + 1 INFRASTRUCTURE.md). Decisoes confirmadas via AskQuestion: (a) docs/INFRASTRUCTURE.md gerado como doc separado; (b) occ_bridge.sh skeleton com 35 entries OCC_ALLOWLIST (espelha CONTRACTS §3.10.1 exato — drift gate em contracts-check.yml); (c) CI-only por agora (CD via deploy-server.sh manual — Sprint S2). NAO modifiquei shared-services/docker-compose.yml (socket-proxy entra na Sprint S3 com cmd_create + upgrade-harp). NAO modifiquei scripts/deploy-server.sh (instalacao das units fica para Sprint S2). Predecessor: Fase 5 contratos REVISAO 0.3 com ~2400 linhas (10 secoes incluindo §10 Tradução de vocabulários), schema_version='1' permanece (mudanças Feature O/P forward-compatible). Aguarda /pmo plan para quebrar v12.0 em 4 sprints risk-first. /jarvis upgrade 2026-05-08: metadata alinhada ao Beesy 4.16.18-beta; decisions_applied_until=178; strategic_context_captured_at registrado a partir do contexto estrategico ja presente.",
   "journal": [
     {
       "at": "2026-05-06T21:14:58Z",
@@ -673,5 +673,8 @@
       "F-D2-009"
     ],
     "senior_review_status": "PASS"
-  }
+  },
+  "beesy_version": "4.16.18-beta",
+  "decisions_applied_until": 178,
+  "strategic_context_captured_at": "2026-05-08T19:30:00-03:00"
 }
