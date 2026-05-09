@@ -1,14 +1,25 @@
-# Nextcloud SaaS Manager v12.0-dev
+# Nextcloud SaaS Manager v12.0
 
 Este repositório contém um conjunto de scripts para implantar e gerenciar uma plataforma Nextcloud SaaS multi-tenant, utilizando Docker, Traefik como reverse proxy e Let's Encrypt para certificados SSL automáticos.
 
 O objetivo é permitir que qualquer pessoa com um servidor Ubuntu 24.04 (KVM) possa, seguindo este README, ter uma plataforma pronta para hospedar múltiplos clientes Nextcloud de forma segura e isolada.
+
+## Índice de Documentação
+
+- [Requisitos](docs/REQUIREMENTS.md) — escopo funcional, NFRs, riscos e premissas.
+- [Arquitetura](docs/ARCHITECTURE.md) — módulos, ADRs propostas e topologia v12.0.
+- [Contratos](docs/CONTRACTS.md) — CLI, JSON Schemas, callback HMAC, Redis e integração API.
+- [Infraestrutura](docs/INFRASTRUCTURE.md) — Tier 1 Proxmox/Ubuntu 24.04, firewall, storage e runbook.
+- [Administração](docs/ADMINISTRATION.md) — operação diária, worker, fila, staging e hardening.
+- [Troubleshooting](docs/TROUBLESHOOTING.md) — diagnóstico de worker, SSH, socket-proxy e clientes.
+- [Roadmap](docs/ROADMAP.md) — sprints D1-D5 e gates de release.
 
 ---
 
 ### Changelog
 | Versão | Data       | Principais Mudanças |
 |:-------|:-----------|:--------------------|
+| **v12.0** | 2026-05-08 | Release v12.0: modo assíncrono Redis + worker systemd + SSH gateway, lifecycle de users/groups/apps (Feature O), staging SCP/SFTP para anexos, OCC sync passthrough allowlisted (Feature P), client-lock, health consolidado, socket-proxy para HaRP, secrets em arquivos e documentação operacional/contratual completa. |
 | **v12.0-dev** | 2026-05-08 | **Sprint D2 — Async Core:** Modo assíncrono completo via Redis queue + worker systemd + SSH gateway dedicado. `--async --json --idempotency-key --callback` em todos os comandos ASYNC_ALLOWED. Worker daemon (`nextcloud-saas-worker.service`) com BRPOP, callback HMAC-SHA256 e retry 5/30/300s. SSH gateway `ncsaas-api` (nologin + shim + sudoers) para consumo via API REST. Observabilidade NDJSON em journald (tags: `ncsaas-api-ssh`, `nextcloud-saas-worker`). Subcomandos: `worker status/stats`, `job <id> status/logs/cancel`, `job list`. |
 | **v12.0-dev** | 2026-05-07 | **Sprint D1 — Foundation:** Suite Bats (unit + integration), lib/* (validators, output_json, job_queue, job_runner, ssh_audit, legacy_helpers), CI (shellcheck.yml, bats.yml, contracts-check.yml), manage.sh refatorado, systemd units, SSH configs, socket-proxy env, occ_bridge skeleton. |
 |:-------|:-----------|:--------------------|
@@ -328,6 +339,82 @@ O usuário `ncsaas-api` usa `nologin` + `ForceCommand=/usr/local/bin/ncsaas-api-
 ```bash
 usermod -L ncsaas-api  # Desabilitar acesso imediatamente
 ```
+
+---
+
+## Lifecycle de Users/Groups/Apps (Feature O)
+
+A v12.0 adiciona namespaces hierárquicos para a API consumidora administrar usuários, grupos e aplicativos por cliente. Esses comandos são **async-only** e retornam `EnqueuedJob` quando usados com `--async --json`.
+
+### Usuários
+
+```bash
+# Criar usuário com senha via stdin, sem expor segredo no argv/journald
+printf '{"password":"senha-temporaria","display_name":"Ana Silva","email":"ana@example.com"}' |
+  nextcloud-manage acme user create ana \
+    --async --json --payload-stdin \
+    --idempotency-key=550e8400-e29b-41d4-a716-446655440001
+
+# Alterar atributos, habilitar/desabilitar e subadmin
+nextcloud-manage acme user modify ana --email=ana.nova@example.com --async --json
+nextcloud-manage acme user modify ana --disable --async --json
+nextcloud-manage acme user remove ana --force --async --json
+```
+
+### Grupos e apps
+
+```bash
+nextcloud-manage acme group create financeiro --async --json
+nextcloud-manage acme group modify financeiro --rename=finops --async --json
+
+# Batch tolerante por padrão; use --strict para abortar na primeira falha
+nextcloud-manage acme apps enable calendar,contacts,deck --async --json
+nextcloud-manage acme apps disable mail,notes --strict --async --json
+```
+
+### Staging SCP/SFTP para anexos
+
+Arquivos maiores que 256KB não devem ir como base64 inline. Envie antes para o jail SFTP e referencie o UUID no comando:
+
+```bash
+STAGING_ID=550e8400-e29b-41d4-a716-446655440000
+scp logo.png ncsaas-api@servidor:/opt/nextcloud-customers/inbox/${STAGING_ID}/logo.png
+
+printf '{"branding":{"logo_file":"logo.png"}}' |
+  nextcloud-manage acme nextcloud.acme.com.br create \
+    --async --json --payload-stdin --staging-id="${STAGING_ID}"
+```
+
+O worker move os anexos para o diretório do job antes de executar. Metadados vivem em `nc:inbox:<staging-id>` e órfãos são removidos pelo GC em 24h.
+
+---
+
+## OCC Sync Passthrough (Feature P)
+
+`occ-exec` expõe um subconjunto seguro de `php occ` para a API consumidora. O comando é **sempre síncrono**, não aceita `--async` e só executa subcomandos allowlisted em `docs/CONTRACTS.md §3.10.1`.
+
+```bash
+# Comando read-only com parsed_result quando OCC retorna JSON
+nextcloud-manage acme occ-exec user:list --json
+
+# Comando mutável protegido por client-lock
+nextcloud-manage acme occ-exec app:enable calendar --json
+
+# Senhas sempre via stdin
+printf '{"password":"senha-temporaria"}' |
+  nextcloud-manage acme occ-exec user:add ana --payload-stdin --json
+```
+
+Subcomandos perigosos como `encryption:*`, `db:execute`, `config:system:set` e `upgrade` são bloqueados. Comandos mutáveis adquirem `nc:client_lock:<cliente>` e retornam exit 17 se um job async estiver operando no mesmo cliente.
+
+---
+
+## Hardening v12.0
+
+- **Socket-proxy para HaRP**: clientes novos usam `DOCKER_HOST=tcp://shared-socket-proxy:2375` em vez de montar `/var/run/docker.sock` diretamente. Para clientes existentes, rode `nextcloud-manage upgrade-harp <cliente> --dry-run --json` e depois sem `--dry-run`.
+- **Secrets em arquivos**: `shared-services/setup-shared.sh` cria `/opt/shared-services/secrets/*` com modo 0600 e o compose usa `*_FILE` quando a imagem suporta. Faça cópia off-line desses arquivos após o deploy.
+- **Health consolidado**: `nextcloud-manage health --json` executa 8 checks paralelos com timeout de 5s cada e retorna `ok`, `warn` ou `fail`.
+- **Auditoria estruturada**: SSH, worker e OCC emitem NDJSON em journald com tags `ncsaas-api-ssh`, `nextcloud-saas-worker` e `nextcloud-saas-occ-exec`.
 
 ---
 

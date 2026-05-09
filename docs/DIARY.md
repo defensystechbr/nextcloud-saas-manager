@@ -6,7 +6,24 @@
 
 | Sprint | Modulos | Temas | Linhas |
 |--------|---------|-------|--------|
+| D5 | decision-brief, README, e2e, release | adr, release-docs, e2e-gate, hook-credentials, hard-stop | 11-27 |
 | D4 | occ-bridge, client-lock, health-command, socket-proxy, secrets-file | occ-exec, redis-lock, health-parallel, docker-socket-proxy, secrets-file | 10-23 |
+
+## Sprint D5
+**Temas**: adr, release-docs, e2e-gate, hook-credentials, hard-stop
+
+### Decisoes de implementacao
+- ADRs `ARCH-001..ARCH-013` foram materializadas em `docs/DECISION-BRIEF.md` para fechar o registro arquitetural antes da release.
+- README passou a tratar v12.0 como release, com indice de docs e secoes Feature O/P/hardening.
+
+### O que nao funcionou
+- A correcao necessaria para o E2E create+backup+remove exigia alterar `scripts/manage.sh`, mas o hook de credenciais bloqueou a edicao do arquivo.
+
+### Descobertas tecnicas
+- A suite integration completa precisa rodar fora do sandbox para o Redis fixture subir; com Docker liberado, `tests/integration` passou 146/146.
+
+### Workarounds
+- Nenhum workaround aplicado no codigo funcional; D5 foi parada em HARD_STOP para nao mascarar o gate E2E.
 
 ## Sprint D4
 **Temas**: occ-exec, redis-lock, health-parallel, docker-socket-proxy, secrets-file

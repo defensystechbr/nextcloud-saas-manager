@@ -2681,8 +2681,8 @@
 
 | Status | Tamanho | Tarefa | Skill/Command | Depende de |
 |--------|---------|--------|---------------|------------|
-| [ ] | P | 5.1 — Registrar ADRs ARCH-001..ARCH-008 + ADR-009..ADR-013 em `docs/DECISION-BRIEF.md` via capability `decision-brief` | `~/.cursor/skills/capabilities/decision-brief.md` | D1..D4 |
-| [ ] | M | 5.2 — Atualizar `README.md` v12.0 (modo assincrono, Feature O/P, hardening, contratos, indice de docs) | `bash` (manual edit) | D1..D4 |
+| [x] | P | 5.1 — Registrar ADRs ARCH-001..ARCH-008 + ADR-009..ADR-013 em `docs/DECISION-BRIEF.md` via capability `decision-brief` | `~/.cursor/skills/capabilities/decision-brief.md` | D1..D4 |
+| [x] | M | 5.2 — Atualizar `README.md` v12.0 (modo assincrono, Feature O/P, hardening, contratos, indice de docs) | `bash` (manual edit) | D1..D4 |
 | [ ] | M | 5.3 — E2E `tests/e2e/test_create_backup_remove.bats` (docker-in-docker; create + backup + remove com Bats; CI bats.yml job e2e) | `bats` + `docker-in-docker` | D1..D4 |
 | [ ] | P | 5.4 — Auditoria QA full: cenarios idempotency, callback HMAC, LGPD scrub, allowlist OCC, SCP staging jail, client-lock concurrency | `~/.cursor/skills/auditoria-qa/` | 5.3 |
 | [ ] | P | 5.5 — Auditoria de seguranca: R-O-1..R-O-7 mitigated; vetores top-3 §7.3; SSH key rotation procedure documentado | `~/.cursor/skills/auditoria-seguranca/` | 5.3 |

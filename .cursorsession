@@ -18,7 +18,7 @@
   "fase_nome": "Sprint D4 — concluida e validada (Feature P + hardening)",
   "usuarios_alvo": "Time DevOps interno operando servidor Ubuntu 24.04 com multiplas instancias Nextcloud SaaS, e API REST consumidora (em outro repo) que invoca via SSH",
   "prazo": null,
-  "ultimo_update": "2026-05-08T19:26:25-03:00",
+  "ultimo_update": "2026-05-08T21:23:53-03:00",
   "perfil_usuario": "tecnico",
   "principal_preocupacao": "Habilitar consumo do manage.sh por API REST externa via SSH com modo assincrono (fila + worker) sem bloquear a API durante operacoes longas; manter base Bash + Docker Compose intacta",
   "modulos": [
@@ -263,10 +263,49 @@
     "ARCH-005",
     "ARCH-006",
     "ARCH-007",
-    "ARCH-008"
+    "ARCH-008",
+    "ARCH-009",
+    "ARCH-010",
+    "ARCH-011",
+    "ARCH-012",
+    "ARCH-013"
   ],
   "sprint_atual": "D5",
-  "checkpoint": null,
+  "checkpoint": {
+    "sprint": "D5",
+    "phase": "hard_stop",
+    "started_at": "2026-05-08T21:23:53-03:00",
+    "current_task": "5.3",
+    "tasks_done": 2,
+    "tasks_total": 10,
+    "validation_gate": "baseline_pass_dynamic_requires_unsandboxed_docker",
+    "task_results": [
+      {
+        "task": "5.1",
+        "status": "DONE",
+        "files": [
+          "docs/DECISION-BRIEF.md",
+          "docs/ROADMAP.md"
+        ],
+        "convergence_pass": true
+      },
+      {
+        "task": "5.2",
+        "status": "DONE",
+        "files": [
+          "README.md",
+          "docs/ROADMAP.md"
+        ],
+        "convergence_pass": true
+      },
+      {
+        "task": "5.3",
+        "status": "HARD_STOP",
+        "reason": "E2E create+backup+remove exige editar scripts/manage.sh, mas o hook de credenciais bloqueia alteracoes no arquivo; nao marcar task sem teste verde.",
+        "convergence_pass": false
+      }
+    ]
+  },
   "comandos_recentes": [
     "/pmo fix",
     "/pmo novo",
@@ -275,7 +314,7 @@
     "/arquiteto contratos",
     "/devops planejar"
   ],
-  "contexto_rapido": "Sprint D4 concluida: occ-exec sync, client-lock, health 8 checks, socket-proxy, secrets-file e upgrade-harp validados. Autopilot pronto para D5.",
+  "contexto_rapido": "Sprint D5 parcial: ADRs e README v12.0 concluidos; HARD_STOP em 5.3 porque o E2E create+backup+remove requer ajuste em scripts/manage.sh bloqueado por hook de credenciais.",
   "journal": [
     {
       "at": "2026-05-06T21:14:58Z",
@@ -570,7 +609,7 @@
   },
   "compact_count": 1,
   "autopilot": {
-    "active": true,
+    "active": false,
     "sprint_range": [
       "D4",
       "D5"
@@ -580,7 +619,13 @@
       "D3",
       "D4"
     ],
-    "hard_stops": [],
+    "hard_stops": [
+      {
+        "sprint": "D5",
+        "reason": "HARD_STOP task 5.3 — E2E create+backup+remove requer ajuste em scripts/manage.sh, mas hook de credenciais bloqueou edicao do arquivo",
+        "timestamp": "2026-05-08T21:44:00-03:00"
+      }
+    ],
     "current_sprint": "D5",
     "validator_available": true,
     "sprint_list": [
@@ -593,7 +638,7 @@
     "validate_between": true,
     "report_path": "docs/AUTOPILOT-REPORT.md"
   },
-  "active_automation": "sprint-all",
+  "active_automation": "sprint",
   "validation_gate": {
     "sprint": "D4",
     "command": "autopilot senior+qa",
@@ -620,5 +665,5 @@
   "beesy_version": "4.16.18-beta",
   "decisions_applied_until": 178,
   "strategic_context_captured_at": "2026-05-08T19:30:00-03:00",
-  "pending_action": "Autopilot D4 concluido; proxima sprint D5."
+  "pending_action": "HARD_STOP Sprint D5 task 5.3: liberar/corrigir edicao segura de scripts/manage.sh para implementar E2E create+backup+remove; depois retomar D5.3."
 }

@@ -1,16 +1,17 @@
 {
   "persona": "sprint-executor",
-  "phase": "Sprint D4 — concluida e validada (Feature P + hardening)",
-  "intent": "Executar Sprint D4 — Feature P (occ-exec sync) + hardening socket-proxy/secrets/health/client-lock.",
-  "changes_made": "Sprint D4 concluida: 8/8 tasks. Entregues occ-exec sync com allowlist e payload stdin, client-lock exit 17, health com 8 checks paralelos, socket-proxy para HaRP, upgrade-harp e secrets em arquivos.",
+  "phase": "Sprint D5 — HARD_STOP em 5.3",
+  "intent": "Executar Sprint D5 — estabilizacao, polish, E2E, auditorias comprehensive, deploy staging e release v12.0.",
+  "changes_made": "Sprint D5 parcial: 2/10 tasks concluidas. Registrados ADRs ARCH-001..ARCH-013 em docs/DECISION-BRIEF.md e README atualizado para v12.0 com indice de docs, Feature O/P e hardening.",
   "decisions": {
-    "occ_exec_dispatch": "occ-exec usa caminho especial no dispatcher porque subcommands OCC contem dois-pontos e nao mapeiam para nomes de funcao Bash.",
-    "health": "checks paralelos geram JSON unico e exit code reflete pior status sem quebrar consumo da API.",
-    "secrets": ".env dos shared-services contem referencias *_FILE; setup-shared exporta secrets em runtime para imagens sem suporte nativo a *_FILE."
+    "decision_brief": "ADRs v12.0 foram materializadas em formato append-only com prefixo ARCH sequencial.",
+    "hard_stop": "D5.3 nao foi marcada porque o E2E create+backup+remove requer ajuste em scripts/manage.sh e o hook de credenciais bloqueou edicoes nesse arquivo.",
+    "validation": "Gates estaticos e suites sanity/unit/integration passaram; integration exige Docker fora do sandbox."
   },
   "next_steps": [
-    "Executar Sprint D5 comprehensive: estabilizacao, ADRs, e2e docker-in-docker, deploy staging e tag v12.0.",
-    "Validar em staging real o smoke SSH: nextcloud-manage acme occ-exec user:list --json em <5s."
+    "Liberar uma rota segura para corrigir scripts/manage.sh sem violar o hook de credenciais.",
+    "Retomar D5.3 criando tests/e2e/test_create_backup_remove.bats e job CI docker-in-docker.",
+    "Depois de D5.3 verde, executar auditorias comprehensive, deploy staging Tier 1, CHANGELOG e tag v12.0."
   ],
-  "updated_at": "2026-05-08T19:26:25-03:00"
+  "updated_at": "2026-05-08T21:44:00-03:00"
 }
