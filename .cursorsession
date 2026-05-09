@@ -15,7 +15,7 @@
     "docs/ROADMAP.md"
   ],
   "fase_atual": "11",
-  "fase_nome": "Sprint N1 — Tech Debt v12.1 — EM PLANEJAMENTO",
+  "fase_nome": "Sprint N1 — CONCLUIDA — v12.1 released",
   "usuarios_alvo": "Time DevOps interno operando servidor Ubuntu 24.04 com multiplas instancias Nextcloud SaaS, e API REST consumidora (em outro repo) que invoca via SSH",
   "prazo": null,
   "ultimo_update": "2026-05-08T21:23:53-03:00",
@@ -274,13 +274,21 @@
   "checkpoint": {
     "sprint": "N1",
     "branch": "sprint/N1",
-    "phase": "planning",
+    "phase": "done",
     "started_at": "2026-05-08T23:37:00-03:00",
+    "completed_at": "2026-05-08T23:59:00-03:00",
     "current_task": null,
-    "tasks_done": 0,
+    "tasks_done": 6,
     "tasks_total": 6,
-    "validation_gate": null,
-    "task_results": []
+    "validation_gate": "n1_approved",
+    "task_results": [
+      {"task": "N1.1", "status": "DONE", "files": ["scripts/ncsaas-api-shim", "tests/unit/test_ssh_shim.bats"]},
+      {"task": "N1.2", "status": "DONE", "files": ["scripts/worker.sh"]},
+      {"task": "N1.3", "status": "DONE", "files": ["scripts/lib/dispatch.sh"]},
+      {"task": "N1.4", "status": "DONE", "files": ["scripts/lib/job_queue.sh"]},
+      {"task": "N1.5", "status": "DONE", "files": ["scripts/lib/job_queue.sh", "tests/integration/test_inbox_staging.bats", "tests/integration/test_feature_o.bats"]},
+      {"task": "N1.6", "status": "DONE", "files": ["CHANGELOG.md", "docs/FINDINGS.md"]}
+    ]
   },
   "comandos_recentes": [
     "/pmo new",
@@ -290,7 +298,7 @@
     "/arquiteto planejar",
     "/devops planejar"
   ],
-  "contexto_rapido": "v12.0 released. Sprint N1 em planejamento: 6 tasks de tech debt (QA-001..006 OPEN + PERF-002/003). Nenhum blocking. Proximo: executar N1.1 (QA-001 SSH shim sanitize).",
+  "contexto_rapido": "v12.1 released. Sprint N1 concluida: QA-001..006 FIXED, PERF-002/003 FIXED, 55/55 unit tests PASS, tag v12.1 criada. Proximo: N2 = Feature E (backup off-site S3/B2/restic).",
   "journal": [
     {
       "at": "2026-05-06T21:14:58Z",
@@ -637,5 +645,5 @@
   "beesy_version": "4.16.18-beta",
   "decisions_applied_until": 178,
   "strategic_context_captured_at": "2026-05-08T19:30:00-03:00",
-  "pending_action": "Sprint N1 planejada. Executar: /pmo sprint N1 ou iniciar N1.1 manualmente."
+  "pending_action": "v12.1 released. Proximo: /pmo new para Sprint N2 (Feature E — backup off-site S3/B2/restic)."
 }
