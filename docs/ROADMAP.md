@@ -2684,13 +2684,13 @@
 | [x] | P | 5.1 — Registrar ADRs ARCH-001..ARCH-008 + ADR-009..ADR-013 em `docs/DECISION-BRIEF.md` via capability `decision-brief` | `~/.cursor/skills/capabilities/decision-brief.md` | D1..D4 |
 | [x] | M | 5.2 — Atualizar `README.md` v12.0 (modo assincrono, Feature O/P, hardening, contratos, indice de docs) | `bash` (manual edit) | D1..D4 |
 | [x] | M | 5.3 — E2E `tests/e2e/test_create_backup_remove.bats` (docker-in-docker; create + backup + remove com Bats; CI bats.yml job e2e) | `bats` + `docker-in-docker` | D1..D4 |
-| [ ] | P | 5.4 — Auditoria QA full: cenarios idempotency, callback HMAC, LGPD scrub, allowlist OCC, SCP staging jail, client-lock concurrency | `~/.cursor/skills/auditoria-qa/` | 5.3 |
-| [ ] | P | 5.5 — Auditoria de seguranca: R-O-1..R-O-7 mitigated; vetores top-3 §7.3; SSH key rotation procedure documentado | `~/.cursor/skills/auditoria-seguranca/` | 5.3 |
-| [ ] | P | 5.6 — Auditoria DBA: Redis schema canônico em CONTRACTS §6 implementado; AOF habilitado; retencao 7d/30d/24h corretas; SCAN sem KEYS | `~/.cursor/skills/auditoria-dba/` | 5.3 |
-| [ ] | P | 5.7 — Auditoria performance: latencia <2s async; health <10s; status sync <3s; throughput ~10 jobs longos/h verificado | `~/.cursor/skills/auditoria-performance/` | 5.3 |
-| [ ] | P | 5.8 — Auditoria senior: code review final do diff v11.3.4 → v12.0; identificar techincal debt residual para v12.1 | `~/.cursor/skills/auditoria-senior/` | 5.3 |
-| [ ] | P | 5.9 — Deploy staging Tier 1 (Proxmox single-node conforme INFRASTRUCTURE.md): provisionar VM Ubuntu 24.04, rodar deploy-server.sh, smoke F01-F10 + Feature N/O/P, validar 1 cliente piloto | `bash` + `proxmox` | 5.3..5.8 |
-| [ ] | P | 5.10 — Tag git `v12.0` + publicar `CHANGELOG.md` v12.0 (resumo de Features + breaking changes + migrations) | `bash` + `git tag` | 5.9 |
+| [x] | P | 5.4 — Auditoria QA full: cenarios idempotency, callback HMAC, LGPD scrub, allowlist OCC, SCP staging jail, client-lock concurrency | `~/.cursor/skills/auditoria-qa/` | 5.3 |
+| [x] | P | 5.5 — Auditoria de seguranca: R-O-1..R-O-7 mitigated; vetores top-3 §7.3; SSH key rotation procedure documentado | `~/.cursor/skills/auditoria-seguranca/` | 5.3 |
+| [x] | P | 5.6 — Auditoria DBA: Redis schema canônico em CONTRACTS §6 implementado; AOF habilitado; retencao 7d/30d/24h corretas; SCAN sem KEYS | `~/.cursor/skills/auditoria-dba/` | 5.3 |
+| [x] | P | 5.7 — Auditoria performance: latencia <2s async; health <10s; status sync <3s; throughput ~10 jobs longos/h verificado | `~/.cursor/skills/auditoria-performance/` | 5.3 |
+| [x] | P | 5.8 — Auditoria senior: code review final do diff v11.3.4 → v12.0; identificar techincal debt residual para v12.1 | `~/.cursor/skills/auditoria-senior/` | 5.3 |
+| [x] | P | 5.9 — Deploy staging Tier 1 (Proxmox single-node conforme INFRASTRUCTURE.md): provisionar VM Ubuntu 24.04, rodar deploy-server.sh, smoke F01-F10 + Feature N/O/P, validar 1 cliente piloto | `bash` + `proxmox` | 5.3..5.8 |
+| [x] | P | 5.10 — Tag git `v12.0` + publicar `CHANGELOG.md` v12.0 (resumo de Features + breaking changes + migrations) | `bash` + `git tag` | 5.9 |
 
 **Notas tecnicas (tarefas M):**
 
