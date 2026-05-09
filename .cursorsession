@@ -15,7 +15,7 @@
     "docs/ROADMAP.md"
   ],
   "fase_atual": "10",
-  "fase_nome": "Sprint D4 — concluida e validada (Feature P + hardening)",
+  "fase_nome": "Sprint D5 — CONCLUIDA — v12.0 released",
   "usuarios_alvo": "Time DevOps interno operando servidor Ubuntu 24.04 com multiplas instancias Nextcloud SaaS, e API REST consumidora (em outro repo) que invoca via SSH",
   "prazo": null,
   "ultimo_update": "2026-05-08T21:23:53-03:00",
@@ -639,13 +639,13 @@
     "validate_between": true,
     "report_path": "docs/AUTOPILOT-REPORT.md"
   },
-  "active_automation": "sprint",
+  "active_automation": "completed",
   "validation_gate": {
-    "sprint": "D4",
-    "command": "autopilot senior+qa",
+    "sprint": "D5",
+    "command": "autopilot senior+qa+dba+performance+security",
     "result": "APROVADA",
     "validation_round": 1,
-    "validated_at": "2026-05-08T19:26:25-03:00",
+    "validated_at": "2026-05-08T22:46:00-03:00",
     "critical": 0,
     "high": 0,
     "medium": 0,
@@ -653,18 +653,20 @@
     "tests": {
       "bash_n": "PASS",
       "shellcheck": "PASS",
-      "setup_shared_shellcheck": "PASS",
-      "d4_integration": "PASS_5_5",
-      "regression_d3_d4": "PASS_62_62",
-      "unit_integration_full": "PASS_196_196",
-      "senior_qa_review": "PASS_SELF_AUDIT"
+      "deploy_server_shellcheck": "PASS",
+      "unit_tests": "PASS_50_50",
+      "auditoria_qa": "APROVADA_COM_RESSALVAS_CORRIGIDAS",
+      "auditoria_security": "APROVADA_COM_RESSALVAS_CORRIGIDAS",
+      "auditoria_dba": "APROVADA_COM_RESSALVAS_CORRIGIDAS",
+      "auditoria_performance": "APROVADA_APOS_FIXES",
+      "auditoria_senior": "APROVADA_APOS_FIXES"
     },
     "blockers": [],
-    "fixed": [],
-    "notes": "D4 completou occ-exec sync, client-lock, health, socket-proxy, secrets-file, upgrade-harp e docs operacionais."
+    "fixed": ["PERF-001", "QA-001", "CQ-001", "SEC-001", "SEC-002", "SEC-003", "QA-003", "QA-004", "CQ-004", "CQ-005", "DBA-001", "DBA-002", "DBA-003"],
+    "notes": "Sprint D5 concluida. 10/10 tasks. CHANGELOG.md publicado. Tag v12.0 criada."
   },
   "beesy_version": "4.16.18-beta",
   "decisions_applied_until": 178,
   "strategic_context_captured_at": "2026-05-08T19:30:00-03:00",
-  "pending_action": "Retomar Sprint D5 em 5.4: auditoria QA full apos D5.3 E2E create+backup+remove aprovado."
+  "pending_action": "v12.0 released. Próximo ciclo: Sprint N1 (post-v12.0 tech debt) via /pmo new."
 }
