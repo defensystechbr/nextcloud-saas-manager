@@ -87,6 +87,14 @@ load_shared_config() {
     fi
     # shellcheck disable=SC1090
     source "${shared_dir}/.env"
+
+    # Older client .env files only persist CLIENT_NAME/DOMAIN/REDIS_DB.
+    # Derive non-secret DB metadata so backup/remove can run in a new process.
+    if [ -n "${CLIENT_NAME:-}" ]; then
+        MYSQL_DATABASE="${MYSQL_DATABASE:-nextcloud_${CLIENT_NAME//-/_}}"
+        MYSQL_USER="${MYSQL_USER:-nc_${CLIENT_NAME//-/_}}"
+        export MYSQL_DATABASE MYSQL_USER
+    fi
 }
 
 # ============================================================

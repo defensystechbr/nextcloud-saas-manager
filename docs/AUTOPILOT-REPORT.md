@@ -230,20 +230,20 @@ Hard stops: nenhum.
 
 Autopilot deve seguir para Sprint D5 (estabilizacao + polish + deploy v12.0).
 
-## Sprint D5 — HARD_STOP — Estabilizacao + Polish + Deploy v12.0
+## Sprint D5 — PARCIAL — Estabilizacao + Polish + Deploy v12.0
 
 **Branch**: `pipeline/2026-05-08`  
 **Data**: 2026-05-08  
-**Status**: PARCIAL (2/10 tasks concluídas)  
-**Motivo**: HARD_STOP em 5.3. O E2E `create + backup + remove` exige ajuste em `scripts/manage.sh`, mas o hook de credenciais bloqueou edições nesse arquivo. A sprint não deve marcar D5.3+ nem publicar tag `v12.0` sem esse gate verde.
+**Status**: PARCIAL (3/10 tasks concluídas)  
+**Motivo**: HARD_STOP em 5.3 resolvido via `/pmo fix`. O E2E `create + backup + remove` foi criado e validado; a sprint deve seguir para D5.4 auditoria QA full.
 
-### Tasks completadas (2/10)
+### Tasks completadas (3/10)
 
 | Task | Status | Artefato |
 |------|--------|----------|
 | 5.1 — Registrar ADRs ARCH-001..ARCH-013 | DONE | `docs/DECISION-BRIEF.md` |
 | 5.2 — Atualizar README.md v12.0 | DONE | `README.md` |
-| 5.3 — E2E docker-in-docker create+backup+remove | HARD_STOP | Requer edição segura de `scripts/manage.sh` antes de criar/validar o teste |
+| 5.3 — E2E create+backup+remove | DONE | `tests/e2e/test_create_backup_remove.bats`, `.github/workflows/bats.yml`, `scripts/lib/legacy_helpers.sh` |
 
 ### Evidencia de validação executada
 
@@ -251,11 +251,12 @@ Autopilot deve seguir para Sprint D5 (estabilizacao + polish + deploy v12.0).
 - `make shellcheck` = PASS
 - `npm exec --yes --package bats -- bats --tap tests/sanity.bats` = 1/1 PASS
 - `npm exec --yes --package bats -- bats --tap --recursive tests/unit` = 50/50 PASS
+- `npm exec --yes --package bats -- bats --tap --recursive tests/e2e` = 3/3 PASS
 - `timeout 240 npm exec --yes --package bats -- bats --tap --recursive tests/integration` no sandbox = FAIL/TIMEOUT (Redis fixture sem acesso a Docker)
 - Reexecução fora do sandbox: `timeout 240 npm exec --yes --package bats -- bats --tap --recursive tests/integration` = 146/146 PASS
 
 ### Findings / Hard Stops
 
-- HARD_STOP D5.3: o fluxo `create + backup + remove` precisa persistir ou derivar metadados de banco suficientes para `backup/remove` após `create`; a tentativa de patch em `scripts/manage.sh` foi bloqueada por hook de credenciais.
-- Deploy staging Tier 1, auditorias comprehensive finais, CHANGELOG v12.0 e tag `v12.0` ficaram pendentes porque dependem de D5.3 verde.
+- RESOLVIDO D5.3: o fluxo `create + backup + remove` agora deriva metadados de banco (`MYSQL_DATABASE`/`MYSQL_USER`) para clientes cujo `.env` legado nao os persiste, permitindo `backup/remove` apos `create` em novo processo.
+- Pendentes: D5.4-D5.10 (auditorias comprehensive finais, deploy staging Tier 1, CHANGELOG v12.0 e tag `v12.0`).
 

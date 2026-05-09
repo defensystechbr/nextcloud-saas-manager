@@ -21,9 +21,11 @@
 
 ### Descobertas tecnicas
 - A suite integration completa precisa rodar fora do sandbox para o Redis fixture subir; com Docker liberado, `tests/integration` passou 146/146.
+- Causa raiz do HARD_STOP D5.3: `create` calculava `MYSQL_DATABASE`/`MYSQL_USER`, mas `.env` legado do cliente nao persistia esses metadados; `backup/remove` quebravam em novo processo. Fix aplicado em `load_shared_config` derivando metadados nao secretos por `CLIENT_NAME`.
 
 ### Workarounds
 - Nenhum workaround aplicado no codigo funcional; D5 foi parada em HARD_STOP para nao mascarar o gate E2E.
+- D5.3 retomada via `/pmo fix`: `tests/e2e/test_create_backup_remove.bats` cobre create -> backup -> remove e passou 3/3.
 
 ## Sprint D4
 **Temas**: occ-exec, redis-lock, health-parallel, docker-socket-proxy, secrets-file

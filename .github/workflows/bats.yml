@@ -115,3 +115,38 @@ jobs:
         run: |
           echo "::warning::tests/integration/ vazio — aguardando módulo tests-bats (Sprint S1)."
           exit 0
+
+  e2e:
+    name: Bats e2e (create backup remove)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Bats + tools
+        run: |
+          set -eu
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            bats \
+            jq \
+            shellcheck \
+            redis-tools \
+            uuid-runtime \
+            openssl
+          sudo mkdir -p "$BATS_LIB_PATH"
+          sudo git clone --depth=1 https://github.com/bats-core/bats-support.git "$BATS_LIB_PATH/bats-support"
+          sudo git clone --depth=1 https://github.com/bats-core/bats-assert.git "$BATS_LIB_PATH/bats-assert"
+
+      - name: Run e2e tests
+        if: hashFiles('tests/e2e/**/*.bats') != ''
+        env:
+          BATS_LIB_PATH: ${{ env.BATS_LIB_PATH }}
+        run: bats --tap --recursive tests/e2e
+
+      - name: No e2e tests yet
+        if: hashFiles('tests/e2e/**/*.bats') == ''
+        run: |
+          echo "::warning::tests/e2e/ vazio — aguardando gate D5.3."
+          exit 0
