@@ -27,9 +27,14 @@ _audit_log() {
   logger -t ncsaas-api-ssh -p "auth.${level}" -- "$payload" 2>/dev/null || true
 }
 
-# Sanitizar comando antes de logar (nunca logar --password=*)
+# Sanitizar comando antes de logar (nunca logar --password=* nem --password VALUE)
 _sanitize_for_log() {
-  echo "$1" | sed -E 's/(--password|--password-from-env)=\S+/\1=***/g'
+  local cmd="$1"
+  # Forma 1: --password=VALUE (com sinal de igual)
+  cmd="$(printf '%s' "$cmd" | sed -E 's/(--password|--password-from-env)=\S+/\1=***/g')"
+  # Forma 2: --password VALUE (separado por espaço — mascara token não-flag após a flag)
+  cmd="$(printf '%s' "$cmd" | sed -E 's/(--password|--password-from-env)( +)([^- ][^ ]*)/\1\2***/g')"
+  printf '%s\n' "$cmd"
 }
 
 _ORIG_SANITIZED="$(_sanitize_for_log "$ORIG")"

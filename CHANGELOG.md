@@ -117,6 +117,61 @@ socket-proxy para HaRP/AppAPI, secrets em arquivos, e auditoria abrangente
 
 ---
 
+## [v12.1.0] — 2026-05-08
+
+### Resumo
+
+Release v12.1 fecha toda a dívida técnica OPEN de v12.0 (QA-001..006, PERF-002/003).
+Sem novas features — ciclo de qualidade puro.
+
+### Fixes
+
+#### QA-001 — SSH shim: sanitização de `--password VALUE` (LGPD)
+- `scripts/ncsaas-api-shim::_sanitize_for_log`: extendido com `sed -E` para mascarar
+  forma espaço `--password VALUE` além da forma `=` já existente
+- 5 unit tests em `tests/unit/test_ssh_shim.bats`
+
+#### QA-002 — Worker shutdown: backoff encurtado no SIGTERM
+- `scripts/worker.sh::_on_sigterm`: usa `WORKER_CALLBACK_BACKOFF="0,2,5"` local
+  para callback pós-SIGTERM (max ~7s, não bloqueia além do `TimeoutStopSec` do systemd)
+- `scripts/worker.sh::_fire_callback`: verifica `_WORKER_SHUTDOWN=1` para abortar
+  retries adicionais imediatamente durante shutdown
+
+#### QA-003 — Idempotency: re-enqueue quando job hash expirou
+- `scripts/lib/dispatch.sh::dispatch_enqueue`: detecta `existing_state` vazio no
+  caminho `same:*`; deleta idem key e re-registra para o novo `job_id`; prossegue
+  com enqueue normal em vez de retornar `"state":""`
+
+#### PERF-002 — Batch Redis em `worker_stats` / `job_list`
+- `scripts/lib/job_queue.sh::worker_stats` e `job_list`: substituem 3 `HGET`
+  individuais por 1 `HMGET` (state + cmd + client) por job — reduz round trips em 3×
+
+#### PERF-003 — Timeout em `get_state` / `job status`
+- `scripts/lib/job_queue.sh`: novo helper `_redis_cmd_t` com `timeout(1)` wrapper
+- `get_state` usa `_redis_cmd_t "${REDIS_CMD_TIMEOUT_SEC:-5}"` para HGETALL; retorna
+  `{}` graciosamente em vez de pendurar quando Redis está lento
+
+#### QA-004 — UUID validate em `inbox_staging_consume`
+- `scripts/lib/job_queue.sh::inbox_staging_consume`: `is_valid_uuid_v4` adicionado
+  no início da função (defense-in-depth, bloqueia path traversal e UUIDs inválidos)
+
+#### QA-005 — Cobertura de teste 10MB total multiple files
+- `tests/integration/test_inbox_staging.bats`: 4 novos testes (QA-004/005) — UUID
+  inválido, path traversal, 3×4MB=12MB→exit 18, 2×4MB=8MB→exit 0
+
+#### QA-006 — Comportamento `group-modify rename` documentado em testes
+- `tests/integration/test_feature_o.bats`: 2 novos testes (QA-006) — log contém
+  `nc_group_rename_requires_v31`; confirma que `group:delete` não é chamado
+
+### Technical Debt Residual (diferido para v12.2+)
+
+- CQ-002: `_redis_raw_cli` duplicado em `job_queue.sh` → remover
+- CQ-006: `cmd_create` 226 LOC → extrair sub-funções
+- PERF-004: `WORKER_JOB_TIMEOUT_SEC` default 1800s → avaliar 300s
+- QA-007/008/009: testes HMAC e openssl failure guard
+
+---
+
 ## [v11.3.4] — baseline
 
 Versão anterior ao ciclo v12.0. `scripts/manage.sh` 1051 LOC, `scripts/deploy-server.sh`

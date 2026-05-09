@@ -113,10 +113,19 @@ dispatch_enqueue() {
       same:*)
         local existing_job_id="${idem_result#same:}"
         local existing_state
-        existing_state="$(_redis_cli HGET "nc:jobs:${existing_job_id}" state 2>/dev/null || echo "queued")"
-        _build_enqueued_job "$client" "$cmd" "$existing_job_id" "$args_json" "$domain" \
-          | jq -c ". + {\"idempotent\":true,\"state\":\"${existing_state}\"}"
-        return 0
+        existing_state="$(_redis_cli HGET "nc:jobs:${existing_job_id}" state 2>/dev/null || echo "")"
+
+        if [[ -z "$existing_state" ]]; then
+          # Job hash expirou do Redis mas idem key ainda válida (janela ~24h-7d).
+          # Limpar idem key e re-registrar para o job novo; prosseguir com enqueue.
+          _redis_cli DEL "nc:idem:${idem_key}" >/dev/null 2>&1 || true
+          _redis_cli SET "nc:idem:${idem_key}" "${job_id}:${args_hash}" EX 86400 >/dev/null 2>&1 || true
+          # Fallthrough para o enqueue normal abaixo
+        else
+          _build_enqueued_job "$client" "$cmd" "$existing_job_id" "$args_json" "$domain" \
+            | jq -c ". + {\"idempotent\":true,\"state\":\"${existing_state}\"}"
+          return 0
+        fi
         ;;
       conflict)
         emit_error "idempotency_conflict" "idempotency-key ja usada com args diferentes" 30

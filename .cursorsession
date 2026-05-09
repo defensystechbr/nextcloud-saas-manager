@@ -14,8 +14,8 @@
     "docs/INFRASTRUCTURE.md",
     "docs/ROADMAP.md"
   ],
-  "fase_atual": "10",
-  "fase_nome": "Sprint D5 — CONCLUIDA — v12.0 released",
+  "fase_atual": "11",
+  "fase_nome": "Sprint N1 — Tech Debt v12.1 — EM PLANEJAMENTO",
   "usuarios_alvo": "Time DevOps interno operando servidor Ubuntu 24.04 com multiplas instancias Nextcloud SaaS, e API REST consumidora (em outro repo) que invoca via SSH",
   "prazo": null,
   "ultimo_update": "2026-05-08T21:23:53-03:00",
@@ -220,16 +220,16 @@
     }
   ],
   "branch_trabalho": "development",
-  "versao_alvo": "v12.0",
+  "versao_alvo": "v12.1",
   "proximos_passos": [
-    "Aprovar docs/ROADMAP.md (gerado em 2026-05-07T21:48 — 5 sprints D + 48 tasks + 4 critical Best-of-N; modo autopilot)",
-    "OPCAO A (recomendada): Rodar `/jarvis pipeline` ou `/sprint-all` para executar D1→D5 sequencialmente em autopilot (auditoria automatica entre sprints; pipeline para se findings HIGH disparar /pmo fix)",
-    "OPCAO B (manual): Rodar `/pmo sprint D1` para iniciar manualmente; revisar codigo entre sprints; depois `/pmo sprint D2`, etc",
-    "Em Sprint D5: rodar capability `decision-brief` para registrar ADR-001..ADR-008 + ADR-009..ADR-013 em docs/DECISION-BRIEF.md",
-    "Pos-v12.0: rodar `/pmo new` para Sprint N1 (tech debt residual + Feature E backup off-site se priorizada + observabilidade Loki/Prometheus)",
-    "BLOQUEIO Sprint D2 (async core): Duvidas #1 (URL API REST consumidora) + #2 (stack) — pode prosseguir com mocks em testes; finalizar contratos antes do deploy staging em D5.9. Politica de senha em CONTRACTS.md §9.2 ja decidida (--payload-stdin obrigatorio).",
-    "BLOQUEIO Sprint D3 (Feature O): confirmar com time da API REST: (a) normalizador slug _→- antes de SSH (CONTRACTS.md §10.7); (b) tradução state↔status (cancelled vs canceled); (c) tradução cmd↔job_type 15 verbs; (d) decision matrix base64 inline vs SCP staging (§3.9.0); (e) tabela clusters para roteamento (§10.6); (f) curadoria de whitelist de apps (§10.8)",
-    "BLOQUEIO Sprint D4 (Feature P + hardening): allowlist OCC §3.10.1 revisada com DevOps + WORKER_OCC_TIMEOUT_SEC=60 validado em staging + Nextcloud ≥31 confirmado para group:rename (Decisao deferida em §9.4)"
+    "Executar Sprint N1 — 6 tasks de tech debt: N1.1 (QA-001) → N1.2 (QA-002) → N1.3 (QA-003) → N1.4 (PERF-002/003) → N1.5 (QA-004/005/006) → N1.6 (auditoria + CHANGELOG + tag v12.1)",
+    "N1.1: Fix `_sanitize_for_log` em `scripts/ncsaas-api-shim` para mascarar `--password VALUE` (forma com espaço) + 3 unit tests",
+    "N1.2: Fix `_on_sigterm` em `scripts/worker.sh`: backoff encurtado `0,2,5` + flag `_WORKER_SHUTDOWN=1` para abortar retries antes de SIGKILL",
+    "N1.3: Fix `dispatch_enqueue` em `scripts/lib/dispatch.sh`: re-enqueue quando state vazia (job hash expirado antes de idem key) + 3 testes",
+    "N1.4: Pipeline Redis em `job_list`/`worker_stats` (HMGET batch); timeout 5s em `job status` (scripts/lib/job_queue.sh)",
+    "N1.5: `inbox_staging_consume` UUID validate + test 10MB total + group rename behavior test (scripts/lib/job_queue.sh + tests/integration/)",
+    "N1.6: Auditoria QA + security + senior + CHANGELOG.md v12.1 + tag v12.1 + atualizar .cursorsession",
+    "Pos-N1: N2 = Feature E (backup off-site S3/B2/restic) | N3 = Feature F (Loki+Prometheus+Grafana) | N4 = Feature H (canary upgrade)"
   ],
   "features_concluidas": [
     "Deploy automatizado de instancias Nextcloud multi-tenant",
@@ -270,58 +270,27 @@
     "ARCH-012",
     "ARCH-013"
   ],
-  "sprint_atual": "D5",
+  "sprint_atual": "N1",
   "checkpoint": {
-    "sprint": "D5",
-    "branch": "pipeline/2026-05-08",
-    "phase": "in_progress",
-    "started_at": "2026-05-08T21:23:53-03:00",
-    "current_task": "5.4",
-    "tasks_done": 3,
-    "tasks_total": 10,
-    "validation_gate": "d5_3_e2e_passed",
-    "task_results": [
-      {
-        "task": "5.1",
-        "status": "DONE",
-        "files": [
-          "docs/DECISION-BRIEF.md",
-          "docs/ROADMAP.md"
-        ],
-        "convergence_pass": true
-      },
-      {
-        "task": "5.2",
-        "status": "DONE",
-        "files": [
-          "README.md",
-          "docs/ROADMAP.md"
-        ],
-        "convergence_pass": true
-      },
-      {
-        "task": "5.3",
-        "status": "DONE",
-        "files": [
-          "scripts/lib/legacy_helpers.sh",
-          "tests/e2e/test_create_backup_remove.bats",
-          ".github/workflows/bats.yml",
-          "docs/ROADMAP.md",
-          "docs/AUTOPILOT-REPORT.md"
-        ],
-        "convergence_pass": true
-      }
-    ]
+    "sprint": "N1",
+    "branch": "sprint/N1",
+    "phase": "planning",
+    "started_at": "2026-05-08T23:37:00-03:00",
+    "current_task": null,
+    "tasks_done": 0,
+    "tasks_total": 6,
+    "validation_gate": null,
+    "task_results": []
   },
   "comandos_recentes": [
+    "/pmo new",
     "/pmo fix",
     "/pmo novo",
     "/analista planejar",
     "/arquiteto planejar",
-    "/arquiteto contratos",
     "/devops planejar"
   ],
-  "contexto_rapido": "Sprint D5 parcial: ADRs, README v12.0 e E2E create+backup+remove concluidos; proximo gate e D5.4 auditoria QA full.",
+  "contexto_rapido": "v12.0 released. Sprint N1 em planejamento: 6 tasks de tech debt (QA-001..006 OPEN + PERF-002/003). Nenhum blocking. Proximo: executar N1.1 (QA-001 SSH shim sanitize).",
   "journal": [
     {
       "at": "2026-05-06T21:14:58Z",
@@ -668,5 +637,5 @@
   "beesy_version": "4.16.18-beta",
   "decisions_applied_until": 178,
   "strategic_context_captured_at": "2026-05-08T19:30:00-03:00",
-  "pending_action": "v12.0 released. Próximo ciclo: Sprint N1 (post-v12.0 tech debt) via /pmo new."
+  "pending_action": "Sprint N1 planejada. Executar: /pmo sprint N1 ou iniciar N1.1 manualmente."
 }

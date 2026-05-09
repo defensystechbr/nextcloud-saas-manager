@@ -146,3 +146,63 @@ _run_queue_fn() {
   run _run_queue_fn "inbox_metadata_create" "not-a-valid-uuid" "0" "0" ""
   [ "$status" -eq 5 ]
 }
+
+# ─── 9. QA-004: inbox_staging_consume: staging_id invalido → exit 5 ─────────
+@test "inbox_staging_consume: staging_id vazio ou invalido retorna exit 5" {
+  run bash -c "
+    export WORKER_REDIS_HOST='${WORKER_REDIS_HOST}'
+    export WORKER_REDIS_PORT='${WORKER_REDIS_PORT}'
+    export WORKER_REDIS_DB='${WORKER_REDIS_DB}'
+    source '${LIB_DIR}/job_queue.sh'
+    inbox_staging_consume 'not-a-uuid' '${JOB_UUID}' '${INBOX_BASE}' '${JOBS_BASE}'
+  "
+  [ "$status" -eq 5 ]
+}
+
+# ─── 10. QA-004: inbox_staging_consume: path traversal (/../../etc) → exit 5 ─
+@test "inbox_staging_consume: staging_id com path traversal retorna exit 5" {
+  run bash -c "
+    export WORKER_REDIS_HOST='${WORKER_REDIS_HOST}'
+    export WORKER_REDIS_PORT='${WORKER_REDIS_PORT}'
+    export WORKER_REDIS_DB='${WORKER_REDIS_DB}'
+    source '${LIB_DIR}/job_queue.sh'
+    inbox_staging_consume '../../etc/passwd' '${JOB_UUID}' '${INBOX_BASE}' '${JOBS_BASE}'
+  "
+  [ "$status" -eq 5 ]
+}
+
+# ─── 11. QA-005: inbox_staging_consume: N arquivos < 5MB mas total > 10MB ────
+@test "inbox_staging_consume: 3 arquivos de 4MB cada (total 12MB) retorna exit 18" {
+  mkdir -p "${INBOX_BASE}/${STAGING_UUID}"
+  # 3 arquivos de 4MB = 12MB total (> limite de 10MB)
+  dd if=/dev/zero of="${INBOX_BASE}/${STAGING_UUID}/file1.bin" bs=1M count=4 2>/dev/null
+  dd if=/dev/zero of="${INBOX_BASE}/${STAGING_UUID}/file2.bin" bs=1M count=4 2>/dev/null
+  dd if=/dev/zero of="${INBOX_BASE}/${STAGING_UUID}/file3.bin" bs=1M count=4 2>/dev/null
+
+  run bash -c "
+    export WORKER_REDIS_HOST='${WORKER_REDIS_HOST}'
+    export WORKER_REDIS_PORT='${WORKER_REDIS_PORT}'
+    export WORKER_REDIS_DB='${WORKER_REDIS_DB}'
+    source '${LIB_DIR}/job_queue.sh'
+    inbox_staging_consume '${STAGING_UUID}' '${JOB_UUID}' '${INBOX_BASE}' '${JOBS_BASE}'
+  "
+  [ "$status" -eq 18 ]
+}
+
+# ─── 12. QA-005: inbox_staging_consume: 2 arquivos de 4MB (total 8MB) → ok ───
+@test "inbox_staging_consume: 2 arquivos de 4MB (total 8MB, abaixo do limite) → exit 0" {
+  mkdir -p "${INBOX_BASE}/${STAGING_UUID}"
+  dd if=/dev/zero of="${INBOX_BASE}/${STAGING_UUID}/file1.bin" bs=1M count=4 2>/dev/null
+  dd if=/dev/zero of="${INBOX_BASE}/${STAGING_UUID}/file2.bin" bs=1M count=4 2>/dev/null
+
+  run bash -c "
+    export WORKER_REDIS_HOST='${WORKER_REDIS_HOST}'
+    export WORKER_REDIS_PORT='${WORKER_REDIS_PORT}'
+    export WORKER_REDIS_DB='${WORKER_REDIS_DB}'
+    source '${LIB_DIR}/job_queue.sh'
+    inbox_staging_consume '${STAGING_UUID}' '${JOB_UUID}' '${INBOX_BASE}' '${JOBS_BASE}'
+  "
+  [ "$status" -eq 0 ]
+  [ -f "${JOBS_BASE}/${JOB_UUID}/staging/file1.bin" ]
+  [ -f "${JOBS_BASE}/${JOB_UUID}/staging/file2.bin" ]
+}

@@ -101,11 +101,12 @@ _on_sigterm() {
       failed_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     audit_worker run_finish warning "$_WORKER_CURRENT_JOB" reason "worker_terminated"
 
-    # Callback best-effort após SIGTERM
+    # Callback best-effort após SIGTERM com backoff encurtado (max ~7s total)
+    # para não ultrapassar o TimeoutStopSec do systemd (default 90s).
     local callback
     callback="$(_redis_cli HGET "nc:jobs:${_WORKER_CURRENT_JOB}" "callback" 2>/dev/null || echo "")"
     if [[ -n "$callback" ]]; then
-      _fire_callback "$_WORKER_CURRENT_JOB" "failed" "$callback" || true
+      WORKER_CALLBACK_BACKOFF="0,2,5" _fire_callback "$_WORKER_CURRENT_JOB" "failed" "$callback" || true
     fi
 
     # Liberar client lock se houver
@@ -186,6 +187,11 @@ _fire_callback() {
         attempt "@number:$attempt" http_code "@number:${http_code}" wait_sec "@number:$wait_sec"
       audit_worker callback_failed warning "$job_id" \
         attempt "@number:$attempt" http_code "@number:${http_code}"
+      # Em shutdown: abortar retries para não bloquear além do TimeoutStopSec
+      if [[ "${_WORKER_SHUTDOWN:-0}" -eq 1 ]]; then
+        log_event notice callback_aborted job_id "$job_id" reason "worker_shutting_down"
+        break
+      fi
       sleep "$wait_sec"
     fi
   done

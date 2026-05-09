@@ -134,15 +134,36 @@ set_state() {
 }
 
 # ============================================================
+# _redis_cmd_t <timeout_sec> <redis-cli args...>
+# Variante de _redis_cli com timeout máximo de operação (PERF-003).
+# Usa timeout(1) para evitar hang em get_state/job_status quando
+# Redis está lento ou com backpressure. Exit 124 (timeout) é tratado
+# como falha silenciosa pelos callers.
+# ============================================================
+_redis_cmd_t() {
+  local t="${1:?_redis_cmd_t: timeout obrigatorio}"
+  shift
+  local host="${WORKER_REDIS_HOST:-127.0.0.1}"
+  local port="${WORKER_REDIS_PORT:-6379}"
+  local db="${WORKER_REDIS_DB:-16}"
+  local pass="${WORKER_REDIS_PASS:-}"
+  REDISCLI_AUTH="$pass" timeout "$t" redis-cli -h "$host" -p "$port" -n "$db" --raw "$@"
+}
+
+# ============================================================
 # get_state <job_id>
 # Retorna JSON com todos os campos do hash.
+# Usa timeout REDIS_CMD_TIMEOUT_SEC (default 5s) para evitar hang (PERF-003).
 # ============================================================
 get_state() {
   local job_id="${1:?get_state: job_id obrigatorio}"
   local key="nc:jobs:${job_id}"
 
   local raw
-  raw="$(_redis_raw_cli HGETALL "$key" 2>/dev/null)"
+  raw="$(_redis_cmd_t "${REDIS_CMD_TIMEOUT_SEC:-5}" HGETALL "$key" 2>/dev/null)" || {
+    echo "{}"
+    return 0
+  }
 
   if [[ -z "$raw" ]]; then
     echo "{}"
@@ -375,10 +396,14 @@ worker_stats() {
       [[ -z "$key" ]] && continue
       [[ "$key" == "nc:jobs:queue" ]] && continue
 
+      # PERF-002: HMGET batch — 1 round trip em vez de 3 HGET individuais
+      local hmget_result
+      hmget_result="$(_redis_cli HMGET "$key" state cmd client 2>/dev/null || echo "")"
       local state cmd client
-      state="$(_redis_cli HGET "$key" state 2>/dev/null || echo "unknown")"
-      cmd="$(_redis_cli HGET "$key" cmd 2>/dev/null || echo "")"
-      client="$(_redis_cli HGET "$key" client 2>/dev/null || echo "")"
+      state="$(printf '%s' "$hmget_result" | sed -n '1p')"
+      cmd="$(printf '%s'   "$hmget_result" | sed -n '2p')"
+      client="$(printf '%s' "$hmget_result" | sed -n '3p')"
+      [[ -z "$state" ]] && state="unknown"
 
       state_counts["${state:-unknown}"]=$(( ${state_counts["${state:-unknown}"]:-0} + 1 ))
       [[ -n "$by_cmd"    && -n "$cmd"    ]] && cmd_counts["$cmd"]=$(( ${cmd_counts["$cmd"]:-0} + 1 ))
@@ -459,11 +484,13 @@ job_list() {
 
       local job_id="${key#nc:jobs:}"
 
-      # Ler campos relevantes para filtragem
+      # PERF-002: HMGET batch — 1 round trip em vez de 3 HGET individuais
+      local hmget_result
+      hmget_result="$(_redis_cli HMGET "$key" state cmd client 2>/dev/null || echo "")"
       local state cmd client
-      state="$(_redis_cli HGET "$key" state 2>/dev/null || echo "")"
-      cmd="$(_redis_cli HGET "$key" cmd 2>/dev/null || echo "")"
-      client="$(_redis_cli HGET "$key" client 2>/dev/null || echo "")"
+      state="$(printf '%s'  "$hmget_result" | sed -n '1p')"
+      cmd="$(printf '%s'    "$hmget_result" | sed -n '2p')"
+      client="$(printf '%s' "$hmget_result" | sed -n '3p')"
 
       # Filtrar
       [[ -n "$state_filter"  && "$state"  != "$state_filter"  ]] && continue
@@ -600,6 +627,12 @@ inbox_staging_consume() {
   local job_id="${2:?inbox_staging_consume: job_id obrigatorio}"
   local inbox_base="${3:-/opt/nextcloud-customers/inbox}"
   local jobs_dir="${4:-/opt/nextcloud-saas/jobs}"
+
+  # QA-004: validar UUID v4 (defense-in-depth além do parse_global_flags)
+  if ! is_valid_uuid_v4 "$staging_id"; then
+    echo "inbox_staging_consume: staging_id deve ser UUID v4 lowercase: ${staging_id}" >&2
+    return 5
+  fi
 
   local src_dir="${inbox_base}/${staging_id}"
   if [[ ! -d "$src_dir" ]]; then

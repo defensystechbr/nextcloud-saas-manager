@@ -234,3 +234,44 @@ teardown() {
   [ "$status" -eq 5 ]
   [[ "$output" == *"async_not_supported"* ]]
 }
+
+# ─── 21. QA-006: group modify rename — comportamento esperado documentado ────
+# group:rename nao existe no OCC antes do Nextcloud >= 31.
+# worker_exec_group_modify cria o grupo novo via group:add e registra nota.
+# O grupo antigo NAO e removido automaticamente (comportamento esperado).
+@test "QA-006: group modify rename registra nc_group_rename_requires_v31 no log" {
+  run bash -c "
+    export WORKER_REDIS_HOST='${WORKER_REDIS_HOST}'
+    export WORKER_REDIS_PORT='${WORKER_REDIS_PORT}'
+    export WORKER_REDIS_DB='${WORKER_REDIS_DB}'
+    source '${BATS_TEST_DIRNAME}/../../scripts/worker.sh'
+    # Mock _occ_exec_safe: sucesso para group:add (rename cria grupo novo)
+    _occ_exec_safe() { return 0; }
+    worker_exec_group_modify acme '{\"groupname\":\"admins\",\"action\":\"rename\",\"new_name\":\"administrators\"}' test-jid-001 2>&1
+  "
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"nc_group_rename_requires_v31"* ]]
+}
+
+@test "QA-006: group modify rename NAO chama group:delete (grupo antigo preservado)" {
+  # Comportamento documentado: rename cria grupo novo mas NAO remove o antigo
+  # (compatibilidade OCC < 31). Validar que _occ_exec_safe com group:delete
+  # nunca e invocado durante rename.
+  run bash -c "
+    export WORKER_REDIS_HOST='${WORKER_REDIS_HOST}'
+    export WORKER_REDIS_PORT='${WORKER_REDIS_PORT}'
+    export WORKER_REDIS_DB='${WORKER_REDIS_DB}'
+    source '${BATS_TEST_DIRNAME}/../../scripts/worker.sh'
+    _occ_exec_safe() {
+      local _c=\"\$1\" subcmd=\"\$2\"
+      if [[ \"\$subcmd\" == 'group:delete' ]]; then
+        echo 'UNEXPECTED_DELETE' >&2
+        return 1
+      fi
+      return 0
+    }
+    worker_exec_group_modify acme '{\"groupname\":\"admins\",\"action\":\"rename\",\"new_name\":\"admins2\"}' test-jid-002 2>&1
+  "
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"UNEXPECTED_DELETE"* ]]
+}
