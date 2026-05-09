@@ -18,7 +18,7 @@ sanitize_secrets() {
   # Regex: captura o token secreto e substitui o valor por ***
   # Não re-substitui *** (idempotência garantida pois \S+ não casa ***)
   echo "$text" | sed -E \
-    's/(MYSQL_PASSWORD|NEXTCLOUD_ADMIN_PASSWORD|REDIS_PASSWORD|SIGNALING_SECRET|RECORDING_SECRET|TURN_SECRET|SIGNALING_HASH_KEY|SIGNALING_BLOCK_KEY|SIGNALING_INTERNAL_SECRET|DB_ROOT_PASSWORD|HARP_SHARED_KEY|--password|--password-from-env)=\S+/\1=***/g'
+    's/(MYSQL_PASSWORD|NEXTCLOUD_ADMIN_PASSWORD|REDIS_PASSWORD|WORKER_REDIS_PASS|WORKER_CALLBACK_SECRET|SIGNALING_SECRET|RECORDING_SECRET|TURN_SECRET|SIGNALING_HASH_KEY|SIGNALING_BLOCK_KEY|SIGNALING_INTERNAL_SECRET|DB_ROOT_PASSWORD|HARP_SHARED_KEY|--password|--password-from-env)=\S+/\1=***/g'
 }
 
 # ============================================================

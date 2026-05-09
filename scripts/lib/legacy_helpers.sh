@@ -4,6 +4,7 @@
 # Source guard
 [ "${LEGACY_HELPERS_SH_SOURCED:-0}" = "1" ] && return 0
 readonly LEGACY_HELPERS_SH_SOURCED=1
+set -euo pipefail
 
 # ============================================================
 # Cores e helpers de log

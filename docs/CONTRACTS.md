@@ -2033,10 +2033,11 @@ components:
 | `nc:jobs:<id>` | HASH | nenhum em `queued`/`running`; `EX 604800` (7d) ao set `finished_at` | `manage-cli` (enqueue), `worker` (atualiza estado) | `manage-cli` (`job <id> status`), `worker` (continuação) | TTL automático |
 | `nc:idem:<uuid-v4>` | STRING `<job_id>:<args_hash>` | `EX 86400` (24h) na criação | `manage-cli` (SET NX) | `manage-cli` (GET em retry) | TTL automático |
 | `nc:worker:lock` | STRING `<pid>` | `EX 60`, renovado a cada 30s | `worker` (startup, SET NX) | `worker` (renovação), `health` (leitura) | `worker` (DEL no shutdown), TTL se crash |
-| `nc:worker:current` | STRING `<job_id>` | sem TTL | `worker` (início de job) | `worker status`, `health` | `worker` (DEL no fim do job) |
+| `nc:worker:current_job` | STRING `<job_id>` | `EX 86400` (24h safety net) | `worker` (início de job) | `worker status`, `health` | `worker` (DEL explícito no fim do job), TTL automático se crash |
 | `nc:worker:metrics:jobs_today` | STRING (counter) | `EX` para próxima meia-noite | `worker` (INCR ao terminar job) | `worker status` | TTL automático |
 | `nc:inbox:<staging-id>` | HASH (Feature O.5) | `EX 86400` (24h) na criação; `EX 604800` (7d) após `consumed_at` | `manage-cli` (no início de `cmd_create`/`occ_exec_branding` que consome staging) | `manage-cli` (validação de não-consumo duplo) | TTL automático |
-| `nc:client_lock:<cliente>` | STRING `<job_id ou occ-exec-tag>` (Feature P) | `EX 5` (auto-expire), renovado durante operação | `worker` (início de job que altera estado) e `manage-cli` (início de `occ-exec` que altera estado) | `manage-cli` (verifica antes de `occ-exec` — exit 17 se ocupado) | DEL no fim da operação, TTL se crash |
+| `nc:client_lock:<cliente>` | STRING `<job_id ou occ-exec-tag>` (Feature P) | `EX 60` (auto-expire), renovado a cada 20s durante operação | `worker` (início de job que altera estado) e `manage-cli` (início de `occ-exec` que altera estado) | `manage-cli` (verifica antes de `occ-exec` — exit 17 se ocupado) | DEL no fim da operação, TTL se crash |
+| `nc:pending_pw:<job_id>` | STRING `<plaintext_password>` | `EX 300` (5 min) | `manage-cli` (`cmd_user_create`/`modify` com `--payload-stdin`) | `worker` (antes de `occ_run user:add`/`resetpassword`; DEL imediato após leitura) | DEL explícito após leitura + TTL automático |
 
 ### 6.2 Schema canônico do `HSET nc:jobs:<id>`
 
@@ -2144,9 +2145,9 @@ auto-aof-rewrite-min-size 64mb
   - `nc:inbox:*` — metadata de SCP staging (Feature O.5).
   - `nc:client_lock:*` — lock por cliente para `occ-exec` que altera estado (Feature P).
 - **dbindex `16`** (configurável via `WORKER_REDIS_DB`) é dedicado e fora do range alocado a clientes Nextcloud (`get_next_redis_db` aloca 0..15 sequencialmente).
-- **Comando `KEYS`** é proibido em código de produção (busy scan). Usar `SCAN MATCH 'nc:jobs:*' COUNT 100` quando precisar enumerar.
-- **Sem `EVAL`/Lua scripts** em v12.0 (desnecessário; reservado para v13+ se transações compostas surgirem).
-- **Cliente lock (`nc:client_lock:<cliente>`)** é diferente de `nc:worker:lock` (que protege contra dois workers): bloqueia operações conflitantes **no mesmo cliente** entre o worker (executando job async) e qualquer `occ-exec` síncrono. TTL curto (5s) renovado durante a operação evita deadlock se o processo morrer.
+- **Comando `KEYS`** é proibido em código de produção (busy scan). Usar `SCAN MATCH 'nc:jobs:*' COUNT 1000` quando precisar enumerar.
+- **`EVAL`/Lua scripts** são permitidos exclusivamente para operações atômicas de lock (compare-and-delete, compare-and-expire em `client_lock_release` e `worker_lock_renew`); proibidos para enumeração de chaves. Scripts Lua complexos ficam reservados para v13+.
+- **Cliente lock (`nc:client_lock:<cliente>`)** é diferente de `nc:worker:lock` (que protege contra dois workers): bloqueia operações conflitantes **no mesmo cliente** entre o worker (executando job async) e qualquer `occ-exec` síncrono. TTL 60s renovado a cada 20s evita deadlock se o processo morrer.
 
 ---
 

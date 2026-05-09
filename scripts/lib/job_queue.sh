@@ -33,9 +33,8 @@ _redis_cli() {
   local pass="${WORKER_REDIS_PASS:-}"
 
   local args=(-h "$host" -p "$port" -n "$db" --raw)
-  [[ -n "$pass" ]] && args+=(-a "$pass")
-
-  redis-cli "${args[@]}" "$@"
+  # Usar REDISCLI_AUTH em vez de -a para evitar exposição da senha no process list (ps aux)
+  REDISCLI_AUTH="$pass" redis-cli "${args[@]}" "$@"
 }
 
 _redis_raw_cli() {
@@ -45,9 +44,7 @@ _redis_raw_cli() {
   local pass="${WORKER_REDIS_PASS:-}"
 
   local args=(-h "$host" -p "$port" -n "$db" --raw)
-  [[ -n "$pass" ]] && args+=(-a "$pass")
-
-  redis-cli "${args[@]}" "$@"
+  REDISCLI_AUTH="$pass" redis-cli "${args[@]}" "$@"
 }
 
 _scan_jobs_page() {
@@ -275,7 +272,8 @@ client_lock_release() {
 client_lock_renew() {
   local client="${1:?client_lock_renew: client obrigatorio}"
   local redis_key="nc:client_lock:${client}"
-  _redis_cli EXPIRE "$redis_key" 5 >/dev/null 2>&1 || true
+  # TTL=60s (3× o intervalo de renovação de 20s — margem segura para jobs OCC ~60s)
+  _redis_cli EXPIRE "$redis_key" 60 >/dev/null 2>&1 || true
 }
 
 # ============================================================
@@ -576,6 +574,8 @@ inbox_metadata_consume() {
   local ts
   ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   _redis_cli HSET "$redis_key" consumed_at "$ts" job_id "$job_id" >/dev/null
+  # Estender TTL para 7d após consumo (CONTRACTS §6.1 — auditabilidade pós-consumo)
+  _redis_cli EXPIRE "$redis_key" 604800 >/dev/null
   return 0
 }
 

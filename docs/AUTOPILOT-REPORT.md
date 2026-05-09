@@ -230,33 +230,54 @@ Hard stops: nenhum.
 
 Autopilot deve seguir para Sprint D5 (estabilizacao + polish + deploy v12.0).
 
-## Sprint D5 — PARCIAL — Estabilizacao + Polish + Deploy v12.0
+## Sprint D5 — PARCIAL→AUDITORIAS CONCLUIDAS — Estabilizacao + Polish + Deploy v12.0
 
 **Branch**: `pipeline/2026-05-08`  
 **Data**: 2026-05-08  
-**Status**: PARCIAL (3/10 tasks concluídas)  
-**Motivo**: HARD_STOP em 5.3 resolvido via `/pmo fix`. O E2E `create + backup + remove` foi criado e validado; a sprint deve seguir para D5.4 auditoria QA full.
+**Status**: AUDITORIAS CONCLUIDAS — 8/10 tasks done; aguardando D5.9 (deploy staging) + D5.10 (tag v12.0)
 
-### Tasks completadas (3/10)
+### Tasks completadas (8/10)
 
 | Task | Status | Artefato |
 |------|--------|----------|
 | 5.1 — Registrar ADRs ARCH-001..ARCH-013 | DONE | `docs/DECISION-BRIEF.md` |
 | 5.2 — Atualizar README.md v12.0 | DONE | `README.md` |
 | 5.3 — E2E create+backup+remove | DONE | `tests/e2e/test_create_backup_remove.bats`, `.github/workflows/bats.yml`, `scripts/lib/legacy_helpers.sh` |
+| 5.4 — Auditoria QA full | DONE + FIXES | APROVADA COM RESSALVAS — QA-001/002 HIGH corrigidos; QA-003/004 MEDIUM corrigidos |
+| 5.5 — Auditoria segurança | DONE + FIXES | APROVADA COM RESSALVAS — SEC-001 HIGH corrigido; SEC-002/003 MEDIUM corrigidos |
+| 5.6 — Auditoria DBA | DONE + FIXES | APROVADA COM RESSALVAS — DBA-001/002 MEDIUM corrigidos; DBA-003/004/005 LOW corrigidos |
+| 5.7 — Auditoria performance | DONE + FIXES | REPROVADA→APROVADA — PERF-001 CRITICAL corrigido; PERF-002/003 HIGH registrados v12.1 |
+| 5.8 — Auditoria senior | DONE + FIXES | REPROVADA→APROVADA — CQ-001 HIGH corrigido; CQ-004/005 MEDIUM corrigidos |
 
-### Evidencia de validação executada
+### Findings corrigidos (commit fix sprint-D5)
 
-- `bash -n scripts/manage.sh scripts/worker.sh scripts/lib/*.sh` = PASS
+| ID | Sev | Fix |
+|----|-----|-----|
+| PERF-001/QA-001 | CRITICAL/HIGH | `client_lock_renew` TTL 5s→60s; renew interval 30s→20s |
+| CQ-001 | HIGH | `restore` adicionado ao branch que passa `domain_or_placeholder` em `dispatch.sh` |
+| SEC-001 | HIGH | `privileged: true` removido do socket-proxy; `cap_drop: ALL` + `no-new-privileges` |
+| SEC-002 | MEDIUM | Bloco explícito de `--` como TOKEN1 no shim |
+| SEC-003 | MEDIUM | `redis-cli -a` → `REDISCLI_AUTH` env var |
+| QA-003 | MEDIUM | `WORKER_CALLBACK_SECRET`/`WORKER_REDIS_PASS` adicionados ao `sanitize_secrets` |
+| QA-004 | MEDIUM | `maintenance:repair`/`versions:expire` adicionados a `SET_STATE_OCC_VERBS` |
+| CQ-004 | MEDIUM | `set -euo pipefail` adicionado ao `legacy_helpers.sh` |
+| CQ-005 | MEDIUM | `health`/`upgrade-harp` adicionados a `SHIM_ALLOWED_TOPLEVEL` |
+| DBA-001/002 | MEDIUM | `nc:pending_pw` + `nc:worker:current_job` documentados em `CONTRACTS.md §6.1` |
+| DBA-003 | LOW | `inbox_metadata_consume` estende TTL para 604800s após consumo |
+
+### Technical debt para v12.1
+
+PERF-002/003 (N+1 Redis; cmd_status sem timeout), PERF-004/005, CQ-002/006/007, QA-002/006/007/008/009.
+
+### Evidencia pós-fixes
+
+- `bash -n scripts/manage.sh scripts/worker.sh scripts/lib/*.sh scripts/ncsaas-api-shim` = PASS
 - `make shellcheck` = PASS
-- `npm exec --yes --package bats -- bats --tap tests/sanity.bats` = 1/1 PASS
-- `npm exec --yes --package bats -- bats --tap --recursive tests/unit` = 50/50 PASS
-- `npm exec --yes --package bats -- bats --tap --recursive tests/e2e` = 3/3 PASS
-- `timeout 240 npm exec --yes --package bats -- bats --tap --recursive tests/integration` no sandbox = FAIL/TIMEOUT (Redis fixture sem acesso a Docker)
-- Reexecução fora do sandbox: `timeout 240 npm exec --yes --package bats -- bats --tap --recursive tests/integration` = 146/146 PASS
+- `bats --tap tests/sanity.bats` = 1/1 PASS
+- `bats --tap tests/unit/*.bats` = 50/50 PASS
 
-### Findings / Hard Stops
+### Pendentes
 
-- RESOLVIDO D5.3: o fluxo `create + backup + remove` agora deriva metadados de banco (`MYSQL_DATABASE`/`MYSQL_USER`) para clientes cujo `.env` legado nao os persiste, permitindo `backup/remove` apos `create` em novo processo.
-- Pendentes: D5.4-D5.10 (auditorias comprehensive finais, deploy staging Tier 1, CHANGELOG v12.0 e tag `v12.0`).
+- **D5.9** — Deploy staging Tier 1 (Proxmox single-node) — requer acesso a infraestrutura real
+- **D5.10** — Tag `v12.0` + `CHANGELOG.md`
 

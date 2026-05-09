@@ -254,7 +254,7 @@ dispatch_legacy_cmd() {
   # Verificar se há handler
   local handler="cmd_${cmd//-/_}"
   if declare -f "$handler" >/dev/null 2>&1; then
-    if [[ "$cmd" == "create" ]]; then
+    if [[ "$cmd" == "create" || "$cmd" == "restore" ]]; then
       "$handler" "$client" "$domain_or_placeholder" "${extra_args[@]+"${extra_args[@]}"}"
     else
       "$handler" "$client" "${extra_args[@]+"${extra_args[@]}"}"

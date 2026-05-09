@@ -87,7 +87,7 @@ done
 #
 # Comandos top-level permitidos:
 readonly SHIM_ALLOWED_TOPLEVEL=(
-  list shared-status worker job
+  list shared-status worker job health upgrade-harp
 )
 # Legacy cmds (token-3 quando token-2 não é namespace):
 readonly SHIM_ALLOWED_LEGACY_CMDS=(
@@ -121,11 +121,19 @@ TOKEN3="${REAL_ARGS[2]:-}"
 # Aceitar flags globais
 _is_flag() { [[ "$1" == --* ]]; }
 
+# Bloquear "--" como TOKEN1 — evita bypass de allowlist via double-dash (SEC-002)
+if [[ "$TOKEN1" == "--" ]]; then
+  _audit_log warning \
+    "{\"event\":\"reject\",\"reason\":\"double_dash_bypass\",\"key_id\":\"${KEY_ID}\"}"
+  echo '{"error":"invalid_command","message":"-- not allowed as first argument"}' >&2
+  exit 100
+fi
+
 # Se TOKEN1 é flag ou vazio → passagem direta (e.g. manage.sh --help)
 if [[ -z "$TOKEN1" ]] || _is_flag "$TOKEN1"; then
   :  # permitir
 elif _in_array "$TOKEN1" "${SHIM_ALLOWED_TOPLEVEL[@]}"; then
-  :  # permitir (list, shared-status, worker, job)
+  :  # permitir (list, shared-status, worker, job, health, upgrade-harp)
 else
   # TOKEN1 é client name — validar TOKEN2 (namespace ou dom) e TOKEN3 (cmd ou verb)
   if _in_array "$TOKEN2" "${SHIM_ALLOWED_NAMESPACES[@]}"; then

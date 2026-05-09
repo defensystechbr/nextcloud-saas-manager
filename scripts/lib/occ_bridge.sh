@@ -109,9 +109,9 @@ readonly -a SET_STATE_OCC_VERBS=(
   "user:setting"  "user:resetpassword"
   "group:add"     "group:delete"      "group:adduser"      "group:removeuser"
   "app:enable"    "app:disable"       "app:install"        "app:remove"
-  "maintenance:mode"  "files:cleanup" "files:repair-tree"
+  "maintenance:mode"  "maintenance:repair"  "files:cleanup" "files:repair-tree"
   "config:app:set"    "config:app:delete"
-  "versions:cleanup"  "theming:config"
+  "versions:cleanup"  "versions:expire"   "theming:config"
   "notification:generate"
   "db:add-missing-indices" "db:add-missing-columns"
 )

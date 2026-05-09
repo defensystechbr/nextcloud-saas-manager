@@ -537,7 +537,7 @@ process_job() {
   fi
 
   # Adquirir client lock (evitar operações simultâneas no mesmo cliente)
-  if ! client_lock_acquire "$client" "${CLIENT_LOCK_TTL_SEC:-5}"; then
+  if ! client_lock_acquire "$client" "${CLIENT_LOCK_TTL_SEC:-60}"; then
     log_event warning run_start job_id "$jid" reason "client_locked" client "$client"
     # Re-enqueue para tentar depois (LPUSH para frente da fila)
     _redis_cli LPUSH "nc:jobs:queue" "$jid" >/dev/null 2>&1 || true
@@ -556,7 +556,7 @@ process_job() {
   # Renovar worker lock + client lock durante execução
   (
     while true; do
-      sleep 30
+      sleep 20  # renew a cada 20s; TTL=60s → margem 3× para jobs OCC longos
       worker_lock_renew "$_WORKER_PID" 2>/dev/null || true
       client_lock_renew "$client" 2>/dev/null || true
       _systemd_notify WATCHDOG=1
