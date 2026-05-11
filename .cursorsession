@@ -15,7 +15,7 @@
     "docs/ROADMAP.md"
   ],
   "fase_atual": "12",
-  "fase_nome": "Sprint N2 — Feature E: Backup Off-site (S3/B2/restic)",
+  "fase_nome": "Sprint N2 — CONCLUIDA — v12.2 released",
   "usuarios_alvo": "Time DevOps interno operando servidor Ubuntu 24.04 com multiplas instancias Nextcloud SaaS, e API REST consumidora (em outro repo) que invoca via SSH",
   "prazo": null,
   "ultimo_update": "2026-05-08T21:23:53-03:00",
@@ -270,18 +270,7 @@
     "ARCH-013"
   ],
   "sprint_atual": "N2",
-  "checkpoint": {
-    "sprint": "N2",
-    "branch": "sprint/N2",
-    "phase": "planning",
-    "started_at": "2026-05-11T11:10:00-03:00",
-    "completed_at": null,
-    "current_task": null,
-    "tasks_done": 0,
-    "tasks_total": 5,
-    "validation_gate": null,
-    "task_results": []
-  },
+  "checkpoint": null,
   "comandos_recentes": [
     "/pmo new",
     "/pmo fix",
@@ -290,7 +279,7 @@
     "/arquiteto planejar",
     "/devops planejar"
   ],
-  "contexto_rapido": "Sprint N2 planejada (2026-05-11). Feature E: backup off-site S3/B2/restic. 5 tasks (2M+3P). Gate: manage.sh backup-offsite --dry-run --json ok; shellcheck PASS; unit tests verdes; timer systemd habilitado; v12.2 tag. Branch: sprint/N2.",
+  "contexto_rapido": "Sprint N2 CONCLUIDA (2026-05-11). Feature E: backup off-site S3/B2/restic. 5/5 tasks. v12.2 tag. 0 CRITICAL, 0 HIGH residual. N3=Feature F (Loki+Prometheus+Grafana). N4=Feature H (canary upgrade). Branch: sprint/N2.",
   "journal": [
     {
       "at": "2026-05-06T21:14:58Z",
@@ -579,9 +568,9 @@
     }
   ],
   "compact_marker": {
-    "compacted_at": "2026-05-08T21:07:49Z",
-    "usage_percent": 94.3327205882353,
-    "messages_lost": 343
+    "compacted_at": "2026-05-11T17:11:36Z",
+    "usage_percent": 91.39500000000001,
+    "messages_lost": 245
   },
   "compact_count": 1,
   "autopilot": {
@@ -632,7 +621,16 @@
       "n1_specific_tests": "PASS"
     },
     "blockers": [],
-    "fixed": ["QA-001", "QA-002", "QA-003", "PERF-002", "PERF-003", "QA-004", "QA-005", "QA-006"],
+    "fixed": [
+      "QA-001",
+      "QA-002",
+      "QA-003",
+      "PERF-002",
+      "PERF-003",
+      "QA-004",
+      "QA-005",
+      "QA-006"
+    ],
     "notes": "Sprint N1 concluida. 8/8 findings N1 verificados no código. Unit 55/55 PASS. Integration 100/152 PASS (52 env failures por Redis em :6377 vs :6379 esperado — padrão F-D2-007). Pronto para merge + /pmo new Sprint N2."
   },
   "validation_gate_prev_d5": {
@@ -657,11 +655,25 @@
       "auditoria_senior": "APROVADA_APOS_FIXES"
     },
     "blockers": [],
-    "fixed": ["PERF-001", "QA-001", "CQ-001", "SEC-001", "SEC-002", "SEC-003", "QA-003", "QA-004", "CQ-004", "CQ-005", "DBA-001", "DBA-002", "DBA-003"],
+    "fixed": [
+      "PERF-001",
+      "QA-001",
+      "CQ-001",
+      "SEC-001",
+      "SEC-002",
+      "SEC-003",
+      "QA-003",
+      "QA-004",
+      "CQ-004",
+      "CQ-005",
+      "DBA-001",
+      "DBA-002",
+      "DBA-003"
+    ],
     "notes": "Sprint D5 concluida. 10/10 tasks. CHANGELOG.md publicado. Tag v12.0 criada."
   },
   "beesy_version": "4.16.18-beta",
   "decisions_applied_until": 178,
   "strategic_context_captured_at": "2026-05-08T19:30:00-03:00",
-  "pending_action": "Sprint N2 planejada. Proximo: /pmo sprint iniciar N2 para executar N2.1 (scripts/lib/backup_offsite.sh + manage.sh backup-offsite)."
+  "pending_action": "Sprint N2 CONCLUIDA (v12.2 tag). Proximo: /pmo new para N3 (Feature F: Loki+Prometheus+Grafana)."
 }
