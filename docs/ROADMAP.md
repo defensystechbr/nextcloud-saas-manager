@@ -36,9 +36,11 @@
 | D1 | D | tests/unit + tests/integration verde no CI; lib/*.sh extraido sem mudar comportamento | **concluida** | 11/11 | tests-bats, ci-shellcheck, manage-cli (refactor base) | Foundation: testes + CI + extracao de lib | 102-617 |
 | D2 | D | API consegue create --async --json em <2s via SSH; worker executa real; callback HMAC dispara; idempotency 24h | **aprovada via F1** | 11/11 | manage-cli (parte 2), idempotency, worker, ssh-gateway, observability, queue-introspection | Async core: queue + worker + SSH + observabilidade | 618-1532 |
 | F1 | F | Revalidar D2 sem CRITICAL/HIGH: CLI/worker iniciam, JSON de job state valido, senha/callback seguros, testes D2 coerentes | **concluida** | 7/7 | manage-cli, job_queue, worker, dispatch, tests, validation-env | Fix gate D2: corrigir blockers F-D2-001..007 antes de D3 | 1533-1592 |
-| D3 | D | API consegue user/group/apps lifecycle async via SSH; SCP staging funciona em jail; senha nunca em journald | pendente | 8 | inbox-staging, user-group-apps, occ-bridge (Parte 1) | Feature O: lifecycle de users/groups/apps + SCP staging + occ-bridge interno | 1593-2276 |
-| D4 | D | occ-exec sync passthrough em <60s; client-lock impede concorrencia; health 8 checks <10s; socket-proxy interposto; secrets em /opt/.../secrets | pendente | 8 | occ-bridge (Parte 2), client-lock, health-command, socket-proxy, secrets-file | Feature P + hardening: occ-exec + client-lock + health + socket-proxy + secrets | 2217-2650 |
-| D5 | D | E2E docker-in-docker passa; auditorias verde; ADRs registradas; deploy staging validado; tag v12.0 publicado | pendente | 10 | docs, ADRs, e2e, auditorias | Estabilizacao + polish + deploy v12.0 | 2651-2763 |
+| D3 | D | API consegue user/group/apps lifecycle async via SSH; SCP staging funciona em jail; senha nunca em journald | **concluida** | 8/8 | inbox-staging, user-group-apps, occ-bridge (Parte 1) | Feature O: lifecycle de users/groups/apps + SCP staging + occ-bridge interno | 1593-2276 |
+| D4 | D | occ-exec sync passthrough em <60s; client-lock impede concorrencia; health 8 checks <10s; socket-proxy interposto; secrets em /opt/.../secrets | **concluida** | 8/8 | occ-bridge (Parte 2), client-lock, health-command, socket-proxy, secrets-file | Feature P + hardening: occ-exec + client-lock + health + socket-proxy + secrets | 2217-2650 |
+| D5 | D | E2E docker-in-docker passa; auditorias verde; ADRs registradas; deploy staging validado; tag v12.0 publicado | **concluida** | 10/10 | docs, ADRs, e2e, auditorias | Estabilizacao + polish + deploy v12.0 | 2651-2763 |
+| N1 | N | QA-001..006 + PERF-002/003 FIXED; tests/unit 55/55 PASS; tag v12.1 publicado | **concluida** | 6/6 | ncsaas-api-shim, worker, dispatch, job_queue, inbox-staging, feature_o | Tech Debt v12.1 — fechar findings QA/PERF abertos de D5 | 2982+ |
+| N2 | N | manage.sh backup-offsite --dry-run --json ok; shellcheck PASS; test_backup_offsite.bats verde; timer systemd habilitado | **pendente** | 0/5 | backup-offsite (novo) | Feature E: Backup Off-site S3/B2/restic | TBD |
 
 ---
 
@@ -2879,3 +2881,126 @@ Apos aprovacao deste roadmap:
 | Data | Versao | Alteracao | Autor |
 |------|--------|-----------|-------|
 | 2026-05-07 | 0.1 | Versao inicial — 5 sprints D risk-first; 48 tarefas; 4 critical (Best-of-N); autopilot mode com auditoria entre sprints; gate executavel por sprint; caminho critico de 12 tarefas; ADRs ARCH-001..ARCH-008 + ADR-009..ADR-013 a registrar em D5 | Planejador de Tarefas (IA) via `/pmo plan` |
+
+---
+
+## Sprint N1 — Tech Debt v12.1
+
+> Categoria: N
+> Gate: QA-001..006 + PERF-002/003 FIXED no código; tests/unit 55/55 PASS; make shellcheck PASS; tag v12.1 publicada
+> Executada: 2026-05-08 → 2026-05-11 | review: skip (gate: /qa validar)
+> Status: **CONCLUIDA** — v12.1 released
+
+| Status | Tamanho | Tarefa | Skill/Command | Depende de |
+|--------|---------|--------|---------------|------------|
+| [x] | P | N1.1: `_sanitize_for_log` estender regex para `--password VALUE` (espaço) + 3 unit tests | shell | — |
+| [x] | P | N1.2: `_on_sigterm` backoff encurtado `0,2,5` + flag `_WORKER_SHUTDOWN=1` aborta retries | shell | — |
+| [x] | P | N1.3: `dispatch_enqueue` re-enqueue quando job hash expirado (state vazia) + 3 testes | shell | — |
+| [x] | P | N1.4: Pipeline Redis em `job_list`/`worker_stats` (HMGET batch); timeout 5s em `job status` | shell | — |
+| [x] | P | N1.5: `inbox_staging_consume` UUID validate + test 10MB total + group rename behavior test | shell | — |
+| [x] | P | N1.6: Auditoria QA + security + senior + CHANGELOG.md v12.1 + tag v12.1 + atualizar .cursorsession | /qa auditoria + shell | N1.1..N1.5 |
+
+**Resultado**: APROVADA — 8/8 findings fechados. Unit 55/55 PASS. CHANGELOG v12.1. Tag v12.1.
+
+---
+
+## Sprint N2 — Feature E: Backup Off-site (S3/B2/restic)
+
+> Categoria: N
+> Gate: `manage.sh backup-offsite <client> --dry-run --json` retorna JSON com `result:dry_run`, `repo_url_redacted` e `files_new` sem erro; `make shellcheck` PASS; `bats tests/unit/test_backup_offsite.bats` verde; timer systemd `nextcloud-saas-backup@.timer` habilitável por cliente; CHANGELOG v12.2 publicado
+> Gerado: 2026-05-11 via `/pmo new` | review: senior+qa
+> Fonte: REQUIREMENTS.md §4.3 Feature E; .cursorsession features_pendentes + proximos_passos
+
+| Status | Tamanho | Tarefa | Skill/Command | Depende de |
+|--------|---------|--------|---------------|------------|
+| [ ] | M | N2.1: `scripts/lib/backup_offsite.sh` + `manage.sh backup-offsite <client>` (--json, --dry-run, sync; secrets de /opt/shared-services/secrets/) | shell | — |
+| [ ] | P | N2.2: systemd `nextcloud-saas-backup@.{service,timer}` — backup agendado por cliente, análogo ao worker systemd | shell | N2.1 |
+| [ ] | M | N2.3: `tests/unit/test_backup_offsite.bats` + `tests/integration/test_backup_offsite.bats` com fake_restic.sh | shell | N2.1 |
+| [ ] | P | N2.4: `docs/ADMINISTRATION.md` — seção Backup Off-site: setup restic, secrets layout, agendamento por cliente | shell | N2.1 |
+| [ ] | P | N2.5: auditoria `senior+qa` + `CHANGELOG.md` v12.2 + tag v12.2 | /qa auditoria + shell | N2.1..N2.4 |
+
+<details>
+<summary>N2.1 — scripts/lib/backup_offsite.sh + manage.sh backup-offsite</summary>
+
+**Estado atual**: `manage.sh backup <client>` faz backup local em `/opt/nextcloud-customers/<client>/backups/`. Nenhum mecanismo de envio off-site existe. LGPD exige backup off-site criptografado (REQUIREMENTS §8, Feature E P2).
+**Estado desejado**: `manage.sh backup-offsite <client> [--dry-run] [--json]` executa `restic backup` sincronamente para repositório S3 ou B2 configurado; retorna `{"schema_version":"1","result":"success|dry_run","client":"<c>","snapshot_id":"<id>","files_new":<n>,"files_changed":<n>,"data_added_bytes":<n>,"repo_url_redacted":"<url-sem-credenciais>","timestamp":"<ISO8601>"}`.
+**Fonte(s)**: REQUIREMENTS.md §4.3 Feature E; .cursorsession `features_pendentes` ("E (P2) — Backup automatico off-site (S3/B2)") + `proximos_passos` ("N2 = Feature E")
+**Módulo(s) afetado(s)**: `scripts/lib/backup_offsite.sh` (novo), `scripts/manage.sh` (cmd_backup_offsite + dispatch), `scripts/lib/dispatch.sh` (registrar verb síncrono)
+**Risco**: MEDIUM — opera sobre dados reais do cliente; secrets handling; hook rtk-rewrite.sh pode bloquear atribuições inline em manage.sh (mitigar: usar `${VAR}` sem `=` inline nos trechos editados)
+**Budget**: M — 3 arquivos, design de API restic + secrets layout + output contract
+
+**executor_prompt**:
+```
+Feature E — backup off-site com restic (Sprint N2.1).
+Projeto: nextcloud-saas-manager — Bash 5 + Docker Compose, manage.sh ~1500 LOC com dispatcher em scripts/lib/dispatch.sh, secrets em /opt/shared-services/secrets/ (0600 root), output JSON com schema_version:"1".
+AVISO: hook rtk-rewrite.sh bloqueia arquivos com atribuições de credenciais inline. Nunca usar VARIAVEL="valor_secreto" — sempre ${VAR} ou leitura de arquivo.
+
+Criar scripts/lib/backup_offsite.sh com:
+- backup_offsite_read_secrets(): lê /opt/shared-services/secrets/backup-repo-url, backup-repo-password, backup-aws-key-id, backup-aws-secret-key (ou backup-b2-account-id, backup-b2-account-key); exporta RESTIC_REPOSITORY, RESTIC_PASSWORD, AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY ou B2_ACCOUNT_ID/B2_ACCOUNT_KEY; retorna exit 12 se backup-repo-url ou backup-repo-password ausentes com JSON {"error":"backup_secrets_missing","message":"..."}.
+- backup_offsite_init_repo(): restic init --repo "${RESTIC_REPOSITORY}" se repositório ainda não existir (restic cat config → exit≠0 significa não inicializado); idempotente.
+- backup_offsite_do_backup(client, dry_run): paths = /opt/nextcloud-customers/<client>/data/ /opt/nextcloud-customers/<client>/config/; exclude = /opt/nextcloud-customers/<client>/backups/; se dry_run=1: restic backup --dry-run --json → captura output, retorna result:dry_run; senão: restic backup --json → captura snapshot_id, files_new, files_changed, data_added_bytes.
+- backup_offsite_prune(): restic forget --keep-daily 7 --keep-weekly 4 --keep-monthly 6 --prune --json.
+- backup_offsite_verify(): restic check --read-data-subset=10%.
+- backup_offsite_redact_url(url): remove credenciais inline da URL para log (s3://user:pass@host → s3://host, b2://id:key@bucket → b2://bucket).
+
+Editar scripts/manage.sh: adicionar função cmd_backup_offsite() que parse args ($1=client, flags --dry-run --json); chama backup_offsite_read_secrets, backup_offsite_init_repo (se não dry_run), backup_offsite_do_backup; emite JSON final via emit_json.
+
+Editar scripts/lib/dispatch.sh: registrar "backup-offsite" como verb síncrono (não enfileirar no worker).
+
+Critério de pronto:
+1. manage.sh backup-offsite acme --dry-run --json → exit 0, JSON com result:dry_run
+2. Secrets ausentes → exit 12, JSON error backup_secrets_missing
+3. make shellcheck PASS (zero warnings)
+4. Nenhuma atribuição de credencial inline nos arquivos editados
+
+Cenários de teste (verificar manualmente ou via N2.3):
+1. Normal: --dry-run com RESTIC_REPOSITORY e RESTIC_PASSWORD mock → exit 0, JSON dry_run
+2. Edge: secrets ausentes → exit 12 + JSON error
+3. Regressão: manage.sh backup <client> (local) continua funcionando após mudanças em dispatch.sh
+```
+
+</details>
+
+<details>
+<summary>N2.3 — tests/unit/test_backup_offsite.bats + tests/integration/test_backup_offsite.bats</summary>
+
+**Estado atual**: Sem cobertura para backup off-site (módulo inexistente até N2.1).
+**Estado desejado**: ≥ 6 testes unit com fake_restic.sh; ≥ 3 testes integration via manage.sh end-to-end; shellcheck em fake_restic.sh PASS.
+**Fonte(s)**: REQUIREMENTS.md §6 (cobertura ≥80% em 3 sprints); padrão de testes D1-D5
+**Módulo(s) afetado(s)**: `tests/unit/test_backup_offsite.bats` (novo), `tests/integration/test_backup_offsite.bats` (novo), `tests/helpers/fake_restic.sh` (novo)
+**Risco**: LOW — arquivos de teste isolados
+**Budget**: M — 3 arquivos novos, design de mock restic + cenários de falha
+
+**executor_prompt**:
+```
+Sprint N2.3 — suite Bats para backup_offsite.sh.
+Projeto: nextcloud-saas-manager — Bash 5, Bats, helpers/ com mocks de binários externos. Após N2.1 estar implementado.
+
+Criar tests/helpers/fake_restic.sh:
+- Shebang #!/usr/bin/env bash
+- Aceita subcomandos: backup, init, check, forget, cat
+- backup: se FAKE_RESTIC_FAIL=1 → exit 1 + stderr "Fatal: ..."; senão → stdout {"snapshot_id":"abc123fake","files_new":5,"files_changed":2,"data_added":4096}; se --dry-run → stdout {"dry_run":true,"files_would_add":5} + exit 0
+- init, check, forget, cat → exit 0 por default; FAKE_RESTIC_FAIL=1 → exit 1
+- Qualquer subcomando desconhecido → exit 1 stderr "unknown command"
+
+Criar tests/unit/test_backup_offsite.bats (mínimo 6 testes):
+- ok 1: backup_offsite_dry_run com fake_restic → exit 0
+- ok 2: backup_offsite_do_backup → exit 0, snapshot_id presente no output JSON
+- ok 3: backup_offsite_read_secrets sem arquivo → exit 12
+- ok 4: backup_offsite_do_backup com FAKE_RESTIC_FAIL=1 → exit não-zero
+- ok 5: backup_offsite_prune → exit 0
+- ok 6: backup_offsite_verify → exit 0
+
+Criar tests/integration/test_backup_offsite.bats (mínimo 3 testes):
+- ok 1: manage.sh backup-offsite acme --dry-run --json → exit 0, JSON result:dry_run
+- ok 2: manage.sh backup-offsite acme --json com fake_restic → exit 0, snapshot_id presente
+- ok 3: manage.sh backup-offsite acme sem secrets → exit 12, JSON error backup_secrets_missing
+
+Critério de pronto:
+- bats tests/unit/test_backup_offsite.bats → todos PASS
+- bats tests/integration/test_backup_offsite.bats → todos PASS com PATH ajustado (fake_restic first)
+- shellcheck --severity=warning tests/helpers/fake_restic.sh → PASS
+```
+
+</details>
+

@@ -14,8 +14,8 @@
     "docs/INFRASTRUCTURE.md",
     "docs/ROADMAP.md"
   ],
-  "fase_atual": "11",
-  "fase_nome": "Sprint N1 — CONCLUIDA — v12.1 released",
+  "fase_atual": "12",
+  "fase_nome": "Sprint N2 — Feature E: Backup Off-site (S3/B2/restic)",
   "usuarios_alvo": "Time DevOps interno operando servidor Ubuntu 24.04 com multiplas instancias Nextcloud SaaS, e API REST consumidora (em outro repo) que invoca via SSH",
   "prazo": null,
   "ultimo_update": "2026-05-08T21:23:53-03:00",
@@ -219,17 +219,16 @@
       ]
     }
   ],
-  "branch_trabalho": "development",
-  "versao_alvo": "v12.1",
+  "branch_trabalho": "sprint/N2",
+  "versao_alvo": "v12.2",
   "proximos_passos": [
-    "Executar Sprint N1 — 6 tasks de tech debt: N1.1 (QA-001) → N1.2 (QA-002) → N1.3 (QA-003) → N1.4 (PERF-002/003) → N1.5 (QA-004/005/006) → N1.6 (auditoria + CHANGELOG + tag v12.1)",
-    "N1.1: Fix `_sanitize_for_log` em `scripts/ncsaas-api-shim` para mascarar `--password VALUE` (forma com espaço) + 3 unit tests",
-    "N1.2: Fix `_on_sigterm` em `scripts/worker.sh`: backoff encurtado `0,2,5` + flag `_WORKER_SHUTDOWN=1` para abortar retries antes de SIGKILL",
-    "N1.3: Fix `dispatch_enqueue` em `scripts/lib/dispatch.sh`: re-enqueue quando state vazia (job hash expirado antes de idem key) + 3 testes",
-    "N1.4: Pipeline Redis em `job_list`/`worker_stats` (HMGET batch); timeout 5s em `job status` (scripts/lib/job_queue.sh)",
-    "N1.5: `inbox_staging_consume` UUID validate + test 10MB total + group rename behavior test (scripts/lib/job_queue.sh + tests/integration/)",
-    "N1.6: Auditoria QA + security + senior + CHANGELOG.md v12.1 + tag v12.1 + atualizar .cursorsession",
-    "Pos-N1: N2 = Feature E (backup off-site S3/B2/restic) | N3 = Feature F (Loki+Prometheus+Grafana) | N4 = Feature H (canary upgrade)"
+    "Executar Sprint N2 — 5 tasks Feature E: N2.1 (lib+cmd) → N2.2 (systemd timer) → N2.3 (testes) → N2.4 (docs) → N2.5 (auditoria + release v12.2)",
+    "N2.1: Criar scripts/lib/backup_offsite.sh (restic wrapper + secrets reader) + manage.sh cmd_backup_offsite (--dry-run --json sync) + dispatch.sh verb backup-offsite",
+    "N2.2: Criar systemd/nextcloud-saas-backup@.{service,timer} para backup agendado por cliente",
+    "N2.3: Criar tests/helpers/fake_restic.sh + tests/unit/test_backup_offsite.bats (6+ testes) + tests/integration/test_backup_offsite.bats (3+ testes)",
+    "N2.4: Atualizar docs/ADMINISTRATION.md com seção Backup Off-site (setup restic, secrets layout, agendamento)",
+    "N2.5: /qa auditoria senior+qa + CHANGELOG.md v12.2 + tag v12.2",
+    "Pos-N2: N3 = Feature F (Loki+Prometheus+Grafana) | N4 = Feature H (canary upgrade)"
   ],
   "features_concluidas": [
     "Deploy automatizado de instancias Nextcloud multi-tenant",
@@ -270,25 +269,18 @@
     "ARCH-012",
     "ARCH-013"
   ],
-  "sprint_atual": "N1",
+  "sprint_atual": "N2",
   "checkpoint": {
-    "sprint": "N1",
-    "branch": "sprint/N1",
-    "phase": "done",
-    "started_at": "2026-05-08T23:37:00-03:00",
-    "completed_at": "2026-05-08T23:59:00-03:00",
+    "sprint": "N2",
+    "branch": "sprint/N2",
+    "phase": "planning",
+    "started_at": "2026-05-11T11:10:00-03:00",
+    "completed_at": null,
     "current_task": null,
-    "tasks_done": 6,
-    "tasks_total": 6,
-    "validation_gate": "n1_approved",
-    "task_results": [
-      {"task": "N1.1", "status": "DONE", "files": ["scripts/ncsaas-api-shim", "tests/unit/test_ssh_shim.bats"]},
-      {"task": "N1.2", "status": "DONE", "files": ["scripts/worker.sh"]},
-      {"task": "N1.3", "status": "DONE", "files": ["scripts/lib/dispatch.sh"]},
-      {"task": "N1.4", "status": "DONE", "files": ["scripts/lib/job_queue.sh"]},
-      {"task": "N1.5", "status": "DONE", "files": ["scripts/lib/job_queue.sh", "tests/integration/test_inbox_staging.bats", "tests/integration/test_feature_o.bats"]},
-      {"task": "N1.6", "status": "DONE", "files": ["CHANGELOG.md", "docs/FINDINGS.md"]}
-    ]
+    "tasks_done": 0,
+    "tasks_total": 5,
+    "validation_gate": null,
+    "task_results": []
   },
   "comandos_recentes": [
     "/pmo new",
@@ -298,7 +290,7 @@
     "/arquiteto planejar",
     "/devops planejar"
   ],
-  "contexto_rapido": "v12.1 released. Sprint N1 concluida: QA-001..006 FIXED, PERF-002/003 FIXED, 55/55 unit tests PASS, tag v12.1 criada. Proximo: N2 = Feature E (backup off-site S3/B2/restic).",
+  "contexto_rapido": "Sprint N2 planejada (2026-05-11). Feature E: backup off-site S3/B2/restic. 5 tasks (2M+3P). Gate: manage.sh backup-offsite --dry-run --json ok; shellcheck PASS; unit tests verdes; timer systemd habilitado; v12.2 tag. Branch: sprint/N2.",
   "journal": [
     {
       "at": "2026-05-06T21:14:58Z",
@@ -671,5 +663,5 @@
   "beesy_version": "4.16.18-beta",
   "decisions_applied_until": 178,
   "strategic_context_captured_at": "2026-05-08T19:30:00-03:00",
-  "pending_action": "v12.1 released. Proximo: /pmo new para Sprint N2 (Feature E — backup off-site S3/B2/restic)."
+  "pending_action": "Sprint N2 planejada. Proximo: /pmo sprint iniciar N2 para executar N2.1 (scripts/lib/backup_offsite.sh + manage.sh backup-offsite)."
 }
