@@ -1,0 +1,27 @@
+# systemd/nextcloud-saas-backup@.service
+# Instalado por scripts/deploy-server.sh como /etc/systemd/system/nextcloud-saas-backup@.service
+# Habilitar por cliente: systemctl enable --now nextcloud-saas-backup@<cliente>.timer
+
+[Unit]
+Description=Nextcloud SaaS Manager — backup off-site para cliente %i (oneshot)
+After=network-online.target
+Wants=network-online.target
+# Opcional — notificações em caso de falha (requere nextcloud-saas-backup-failure@.service)
+# OnFailure=nextcloud-saas-backup-failure@%i.service
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+ExecStart=/opt/nextcloud-customers/manage.sh %i _ backup-offsite --json
+
+ProtectSystem=full
+ProtectHome=true
+NoNewPrivileges=true
+PrivateTmp=true
+ReadWritePaths=/opt/nextcloud-customers /opt/shared-services/secrets
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=nextcloud-saas-backup
+TimeoutSec=3600
