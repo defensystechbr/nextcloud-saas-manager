@@ -618,6 +618,32 @@
   },
   "active_automation": "completed",
   "validation_gate": {
+    "sprint": "N1",
+    "command": "/qa validar",
+    "result": "APROVADA",
+    "validation_round": 2,
+    "validated_at": "2026-05-11T11:00:00-03:00",
+    "critical": 0,
+    "high": 0,
+    "medium": 0,
+    "low": 0,
+    "findings_found": 0,
+    "findings_registered": [],
+    "files_modified_outside_findings": 0,
+    "askquestion_shown": false,
+    "senior_review_status": "PASS",
+    "tests": {
+      "bash_n": "PASS",
+      "shellcheck": "PASS",
+      "unit_tests": "PASS_55_55",
+      "integration_tests": "PARTIAL_100_152_ENV_ISSUE",
+      "n1_specific_tests": "PASS"
+    },
+    "blockers": [],
+    "fixed": ["QA-001", "QA-002", "QA-003", "PERF-002", "PERF-003", "QA-004", "QA-005", "QA-006"],
+    "notes": "Sprint N1 concluida. 8/8 findings N1 verificados no código. Unit 55/55 PASS. Integration 100/152 PASS (52 env failures por Redis em :6377 vs :6379 esperado — padrão F-D2-007). Pronto para merge + /pmo new Sprint N2."
+  },
+  "validation_gate_prev_d5": {
     "sprint": "D5",
     "command": "autopilot senior+qa+dba+performance+security",
     "result": "APROVADA",
