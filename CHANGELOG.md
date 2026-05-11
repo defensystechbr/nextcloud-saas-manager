@@ -117,6 +117,45 @@ socket-proxy para HaRP/AppAPI, secrets em arquivos, e auditoria abrangente
 
 ---
 
+## [v12.2.0] — 2026-05-11
+
+### Resumo
+
+Release v12.2 implementa a Feature E: backup off-site automatizado com [restic](https://restic.net/)
+para repositórios S3 ou Backblaze B2. Backup criptografado incremental, política de retenção
+configurável, timer systemd por cliente e suite de testes Bats completa.
+
+### Novidades
+
+#### Feature E — Backup Off-site S3/B2 com restic (Sprint N2)
+- `manage.sh <client> _ backup-offsite [--dry-run] [--json]` — backup incremental e
+  criptografado para S3 ou B2 via restic; retorna JSON `{"schema_version":"1","result":"success|dry_run","snapshot_id":"...","files_new":N,...,"repo_url_redacted":"...","timestamp":"..."}`
+- `scripts/lib/backup_offsite.sh` — biblioteca com:
+  - `backup_offsite_read_secrets()` — lê secrets de `/opt/shared-services/secrets/` (0600 root); exit 12 com JSON `backup_secrets_missing` se `backup-repo-url` ou `backup-repo-password` ausentes
+  - `_backup_offsite_source_paths()` — coleta paths de backup do cliente (data/ + config/)
+  - `backup_offsite_init_repo()` — inicializa repositório restic de forma idempotente
+  - `backup_offsite_do_backup()` — backup real ou dry-run; propaga exit code do restic
+  - `backup_offsite_prune()` — retenção: 7 daily, 4 weekly, 6 monthly; executado automaticamente após cada backup bem-sucedido
+  - `backup_offsite_verify()` — verifica integridade com `--read-data-subset=10%`
+- `systemd/nextcloud-saas-backup@.{service,timer}` — units paramétricos por cliente:
+  - `OnCalendar=*-*-* 02:00:00` + `RandomizedDelaySec=1h` + `Persistent=true`
+  - Habilitar: `systemctl enable --now nextcloud-saas-backup@<cliente>.timer`
+- `tests/helpers/fake_restic.sh` — mock do binário restic com suporte a `init`, `cat config`, `backup --dry-run`, `forget`, `check` e variáveis `FAKE_RESTIC_*` de controle
+- `tests/unit/test_backup_offsite.bats` — 7 testes unitários (secrets, dry-run, backup real, failure, prune, verify)
+- `tests/integration/test_backup_offsite.bats` — 3 testes de integração via `manage.sh` end-to-end
+- `docs/ADMINISTRATION.md` — nova seção "Backup Off-site" com pré-requisitos, secrets layout, exemplos de uso, agendamento e códigos de saída
+
+### Security Fixes (Sprint N2 auto-fix)
+
+- **SEC-001** — `backup_offsite_redact_url`: corrigido conflito de delimitador em `sed` que impedia redação de credenciais em URLs com `s3://user:pass@host` (delimitador `|` colidia com alternância ERE; trocado para `#`)
+
+### Technical Debt Residual (deferred → v12.3+)
+
+- QA-006: Sem teste para caminho `backup_init_failed` (FAKE_RESTIC_INIT_FAIL=1)
+- QA-007: Sem teste de integração para cliente inexistente em `backup-offsite`
+
+---
+
 ## [v12.1.0] — 2026-05-08
 
 ### Resumo
