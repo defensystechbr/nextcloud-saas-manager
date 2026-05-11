@@ -123,7 +123,7 @@ sudo nextcloud-manage acme _ start
 
 ## Backup e Restauração
 
-### Fazer Backup
+### Fazer Backup Local
 
 ```bash
 sudo nextcloud-manage acme _ backup
@@ -136,6 +136,113 @@ O backup é salvo em `/opt/nextcloud-customers/backups/` com o nome `acme-backup
 ```bash
 sudo nextcloud-manage acme /opt/nextcloud-customers/backups/acme-backup-20260211_025535.tar.gz restore
 ```
+
+---
+
+## Backup Off-site (Feature E — v12.2)
+
+Backup criptografado e incremental para S3 ou Backblaze B2, usando [restic](https://restic.net/).
+
+### Pré-requisitos
+
+1. **Instalar restic** (Ubuntu 24.04):
+   ```bash
+   apt-get install -y restic
+   restic self-update   # opcional: atualiza para versão mais recente
+   ```
+
+2. **Criar os arquivos de secret** em `/opt/shared-services/secrets/` (modo 0600, dono root):
+
+   ```bash
+   # Obrigatórios
+   echo "s3:https://s3.amazonaws.com/<bucket>" > /opt/shared-services/secrets/backup-repo-url
+   echo "<senha-de-encriptacao-restic>"         > /opt/shared-services/secrets/backup-repo-password
+   chmod 0600 /opt/shared-services/secrets/backup-repo-url \
+              /opt/shared-services/secrets/backup-repo-password
+
+   # Para S3 (se não usar instance profile / IAM role)
+   echo "<aws-access-key-id>"     > /opt/shared-services/secrets/backup-aws-key-id
+   echo "<aws-secret-access-key>" > /opt/shared-services/secrets/backup-aws-secret-key
+   chmod 0600 /opt/shared-services/secrets/backup-aws-key-id \
+              /opt/shared-services/secrets/backup-aws-secret-key
+
+   # Para Backblaze B2 (alternativa ao S3)
+   # echo "b2:<bucket>/<path>"  > /opt/shared-services/secrets/backup-repo-url
+   # echo "<b2-account-id>"     > /opt/shared-services/secrets/backup-b2-account-id
+   # echo "<b2-account-key>"    > /opt/shared-services/secrets/backup-b2-account-key
+   ```
+
+   | Secret | Descrição |
+   |--------|-----------|
+   | `backup-repo-url` | URL do repositório restic (`s3:https://...` ou `b2:<bucket>/<path>`) |
+   | `backup-repo-password` | Senha de encriptação do repositório restic (gerada uma vez, guardar com segurança) |
+   | `backup-aws-key-id` | AWS Access Key ID (opcional se usar IAM role) |
+   | `backup-aws-secret-key` | AWS Secret Access Key (opcional se usar IAM role) |
+   | `backup-b2-account-id` | Backblaze B2 Account ID |
+   | `backup-b2-account-key` | Backblaze B2 Account Key |
+
+### Fazer Backup Off-site (manual)
+
+```bash
+# Dry-run — verifica configuração sem criar snapshot
+sudo nextcloud-manage acme _ backup-offsite --dry-run --json
+
+# Backup real (sync, pode demorar vários minutos)
+sudo nextcloud-manage acme _ backup-offsite --json
+```
+
+Saída JSON de exemplo:
+```json
+{
+  "schema_version": "1",
+  "result": "success",
+  "client": "acme",
+  "snapshot_id": "3d4f8a12",
+  "files_new": 42,
+  "files_changed": 7,
+  "data_added_bytes": 1048576,
+  "repo_url_redacted": "s3:https://s3.amazonaws.com/meu-bucket",
+  "timestamp": "2026-05-11T14:00:00Z"
+}
+```
+
+### Agendamento Automático (systemd timer)
+
+Habilitar timer por cliente (roda diariamente às 02h + delay aleatório de até 1h):
+
+```bash
+# Habilitar para cliente 'acme'
+systemctl enable --now nextcloud-saas-backup@acme.timer
+
+# Verificar status
+systemctl status nextcloud-saas-backup@acme.timer
+systemctl status nextcloud-saas-backup@acme.service   # após última execução
+
+# Ver logs do último backup
+journalctl -u nextcloud-saas-backup@acme.service -n 50
+
+# Executar imediatamente (ignora timer, executa o service)
+systemctl start nextcloud-saas-backup@acme.service
+```
+
+Os units systemd ficam em `systemd/nextcloud-saas-backup@.{service,timer}` e são instalados em `/etc/systemd/system/` pelo `scripts/deploy-server.sh`.
+
+### Política de Retenção (padrão restic)
+
+| Critério | Valor |
+|----------|-------|
+| Manter por dia | 7 snapshots |
+| Manter por semana | 4 snapshots |
+| Manter por mês | 6 snapshots |
+| Prune automático | Após cada backup agendado |
+
+### Códigos de Saída
+
+| Código | Significado |
+|--------|-------------|
+| 0 | Backup concluído com sucesso |
+| 12 | Secrets ausentes (`backup-repo-url` ou `backup-repo-password` não encontrados) |
+| 1 | Erro ao inicializar repositório restic ou falha do restic |
 
 ---
 
