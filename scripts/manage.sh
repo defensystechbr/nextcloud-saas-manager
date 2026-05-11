@@ -652,8 +652,13 @@ cmd_backup_offsite() {
     backup_offsite_do_backup "$CLIENT_NAME" "0"
     local exit_code=$?
 
-    if [[ $exit_code -eq 0 && "$is_json" != "1" ]]; then
-        log_success "Backup off-site de '${CLIENT_NAME}' concluído"
+    if [[ $exit_code -eq 0 ]]; then
+        # CQ-005: aplicar política de retenção após backup bem-sucedido
+        backup_offsite_prune 2>/dev/null || true
+
+        if [[ "$is_json" != "1" ]]; then
+            log_success "Backup off-site de '${CLIENT_NAME}' concluído (prune aplicado)"
+        fi
     fi
 
     return $exit_code

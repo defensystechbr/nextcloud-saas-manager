@@ -62,7 +62,7 @@ backup_offsite_redact_url() {
   local url="${1:-${RESTIC_REPOSITORY:-}}"
   # s3://user:pass@host/path → s3://host/path
   # b2://id:key@bucket/path → b2://bucket/path
-  echo "$url" | sed -E 's|^(s3://|b2://)[^:@/]+:[^@/]+@|\1|'
+  echo "$url" | sed -E 's#^(s3://|b2://)[^:@/]+:[^@/]+@#\1#'
 }
 
 # backup_offsite_init_repo
@@ -74,40 +74,49 @@ backup_offsite_init_repo() {
   restic init --repo "${RESTIC_REPOSITORY}" >/dev/null 2>&1
 }
 
+# _backup_offsite_source_paths <client> <exclude_path>
+# Coleta os paths de backup do cliente; popula array global BACKUP_SOURCE_PATHS.
+# Retorna exit 12 se nenhum path existir (CQ-004: evita duplicação entre dry-run e backup real).
+_backup_offsite_source_paths() {
+  local client="${1:?_backup_offsite_source_paths: client obrigatorio}"
+  local exclude_path="${2:?_backup_offsite_source_paths: exclude_path obrigatorio}"
+  local base_dir="${BASE_DIR:-/opt/nextcloud-customers}"
+
+  BACKUP_SOURCE_PATHS=()
+  [[ -d "${base_dir}/${client}/data" ]]   && BACKUP_SOURCE_PATHS+=("${base_dir}/${client}/data")
+  [[ -d "${base_dir}/${client}/config" ]] && BACKUP_SOURCE_PATHS+=("${base_dir}/${client}/config")
+
+  if [[ ${#BACKUP_SOURCE_PATHS[@]} -eq 0 ]]; then
+    emit_error "backup_no_paths" "nenhum path de backup encontrado para cliente '${client}'" >&2
+    return 12
+  fi
+}
+
 # backup_offsite_do_backup <client> <dry_run:0|1>
-# Executa restic backup para os paths do cliente
+# Executa restic backup para os paths do cliente.
 # stdout: JSON com snapshot_id, files_new, files_changed, data_added_bytes
 backup_offsite_do_backup() {
   local client="${1:?backup_offsite_do_backup: client obrigatorio}"
   local dry_run="${2:-0}"
   local base_dir="${BASE_DIR:-/opt/nextcloud-customers}"
-
-  local data_path="${base_dir}/${client}/data"
-  local config_path="${base_dir}/${client}/config"
   local exclude_path="${base_dir}/${client}/backups"
 
-  local restic_args=(
-    backup --json
-    --exclude "${exclude_path}"
-  )
-  [[ -d "$data_path" ]] && restic_args+=("$data_path")
-  [[ -d "$config_path" ]] && restic_args+=("$config_path")
+  # CQ-004: caminho único para coleta de paths — sem duplicação entre dry-run e backup real
+  local BACKUP_SOURCE_PATHS=()
+  _backup_offsite_source_paths "$client" "$exclude_path" || return 12
 
-  if [[ ${#restic_args[@]} -le 3 ]]; then
-    emit_error "backup_no_paths" "nenhum path de backup encontrado para cliente '${client}'" >&2
-    return 12
-  fi
+  local restic_base_args=(backup --json --exclude "${exclude_path}" "${BACKUP_SOURCE_PATHS[@]}")
 
   if [[ "$dry_run" == "1" ]]; then
-    restic_args=(backup --json --dry-run --exclude "${exclude_path}")
-    [[ -d "$data_path" ]] && restic_args+=("$data_path")
-    [[ -d "$config_path" ]] && restic_args+=("$config_path")
-
-    local dry_output
-    dry_output="$(restic "${restic_args[@]}" 2>/dev/null || true)"
-    # restic --dry-run não retorna snapshot_id; extrair estimativa se disponível
+    # CQ-003: propagar exit code do restic no dry-run em vez de engolir com || true
+    local dry_output dry_exit=0
+    dry_output="$(restic "${restic_base_args[@]}" --dry-run 2>&1)" || dry_exit=$?
+    if [[ $dry_exit -ne 0 ]]; then
+      emit_error "backup_restic_failed" "restic dry-run falhou (exit ${dry_exit})" >&2
+      return $dry_exit
+    fi
     local files_would_add=0
-    files_would_add="$(echo "$dry_output" | jq -r '.files_new // 0' 2>/dev/null || echo 0)"
+    files_would_add="$(echo "$dry_output" | jq -r 'select(.message_type=="summary") | .files_new // 0' 2>/dev/null || echo 0)"
     emit_json result "dry_run" client "$client" \
       snapshot_id "" \
       files_new "@number:${files_would_add}" files_changed "@number:0" \
@@ -119,7 +128,7 @@ backup_offsite_do_backup() {
 
   # Backup real — captura output JSON do restic
   local backup_output
-  backup_output="$(restic "${restic_args[@]}" 2>/dev/null)"
+  backup_output="$(restic "${restic_base_args[@]}" 2>/dev/null)"
 
   local snapshot_id files_new files_changed data_added_bytes
   snapshot_id="$(echo "$backup_output" | jq -r 'select(.message_type=="summary") | .snapshot_id // ""' 2>/dev/null || true)"

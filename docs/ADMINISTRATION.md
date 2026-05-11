@@ -234,7 +234,7 @@ Os units systemd ficam em `systemd/nextcloud-saas-backup@.{service,timer}` e sã
 | Manter por dia | 7 snapshots |
 | Manter por semana | 4 snapshots |
 | Manter por mês | 6 snapshots |
-| Prune automático | Após cada backup agendado |
+| Prune automático | Sim — após cada backup bem-sucedido (`backup_offsite_prune`) |
 
 ### Códigos de Saída
 

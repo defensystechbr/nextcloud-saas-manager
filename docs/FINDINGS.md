@@ -420,3 +420,23 @@ Auditado em: 2026-05-08 | Auditor: self-audit N1.6
 - **Stop-loss ativado** (round 2, 0 MEDIUM/LOW pendentes) — ciclo encerrado
 
 **Resultado R2: Sprint N1 APROVADA** ✅ — Pronta para `/pmo git`
+
+---
+
+## Sprint N2 — Feature E Backup Off-site (v12.2)
+
+### [QA-006] LOW — Sem teste para backup_init_failed (DEFERRED → N3)
+
+- **Status**: deferred
+- **Sprint**: N2
+- **Arquivo**: tests/unit/test_backup_offsite.bats
+- **Descrição**: Nenhum teste cobre o caminho `FAKE_RESTIC_NO_CONFIG=1 + FAKE_RESTIC_INIT_FAIL=1` → error `backup_init_failed`. PMO decidiu parkar para N3.
+- **Reportado**: 2026-05-11 | **Origem**: auditoria senior+qa
+
+### [QA-007] LOW — Sem integration test para cliente inexistente (DEFERRED → N3)
+
+- **Status**: deferred
+- **Sprint**: N2
+- **Arquivo**: tests/integration/test_backup_offsite.bats
+- **Descrição**: Nenhum teste de integração verifica `client_not_found` para `backup-offsite`. PMO decidiu parkar para N3.
+- **Reportado**: 2026-05-11 | **Origem**: auditoria senior+qa
