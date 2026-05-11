@@ -1,0 +1,35 @@
+#!/bin/bash
+# tests/fixtures/docker — Mock de docker para testes de manage.sh
+# Comportamento controlado via variáveis de ambiente:
+#   DOCKER_FAKE_OUTPUT  — stdout a emitir (default: "")
+#   DOCKER_FAKE_EXIT    — exit code (default: 0)
+#   DOCKER_INSPECT_STATUS — valor retornado para docker inspect -f '{{.State.Status}}'
+
+output="${DOCKER_FAKE_OUTPUT:-}"
+exit_code="${DOCKER_FAKE_EXIT:-0}"
+
+# Tratar subcomando 'compose'
+if [[ "${1:-}" == "compose" ]]; then
+  shift
+  case "${1:-}" in
+    version) echo "Docker Compose version v2.0.0" ;;
+    up|down|stop|start|pull|restart) echo "$output" ;;
+    *) echo "$output" ;;
+  esac
+  exit "$exit_code"
+fi
+
+case "${1:-}" in
+  inspect)
+    # docker inspect -f '{{.State.Status}}' <container>
+    echo "${DOCKER_INSPECT_STATUS:-running}"
+    ;;
+  exec)
+    echo "$output"
+    ;;
+  *)
+    echo "$output"
+    ;;
+esac
+
+exit "$exit_code"

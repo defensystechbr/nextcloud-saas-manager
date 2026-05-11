@@ -27,9 +27,13 @@ Thumbs.db
 .vscode/
 .idea/
 
+# Bats test helpers (clonados via install-deps.sh)
+tests/lib/
+
 # Beesy pre-flight discovery cache (local)
 docs/.discovery.json
 .cursorsession.lock
+.cursorsession.bak-*
 
 # Beesy session-local state (cache, journal, mcp config) — NOT shared
 .cursor/

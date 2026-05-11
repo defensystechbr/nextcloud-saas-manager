@@ -773,6 +773,7 @@ for i in $(seq 1 30); do
         log_success "MariaDB pronto!"
         break
     fi
+    log_info "Aguardando MariaDB... tentativa ${i}/30"
     sleep 2
 done
 

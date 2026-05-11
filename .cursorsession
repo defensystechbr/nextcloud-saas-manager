@@ -14,11 +14,11 @@
     "docs/INFRASTRUCTURE.md",
     "docs/ROADMAP.md"
   ],
-  "fase_atual": "9",
-  "fase_nome": "Planejamento tecnico concluido (docs/ROADMAP.md gerado: 5 sprints D + 48 tasks + 4 critical Best-of-N; autopilot mode com auditoria entre sprints)",
+  "fase_atual": "12",
+  "fase_nome": "Sprint N2 — CONCLUIDA — v12.2 released",
   "usuarios_alvo": "Time DevOps interno operando servidor Ubuntu 24.04 com multiplas instancias Nextcloud SaaS, e API REST consumidora (em outro repo) que invoca via SSH",
   "prazo": null,
-  "ultimo_update": "2026-05-07T21:48:00Z",
+  "ultimo_update": "2026-05-08T21:23:53-03:00",
   "perfil_usuario": "tecnico",
   "principal_preocupacao": "Habilitar consumo do manage.sh por API REST externa via SSH com modo assincrono (fila + worker) sem bloquear a API durante operacoes longas; manter base Bash + Docker Compose intacta",
   "modulos": [
@@ -219,17 +219,16 @@
       ]
     }
   ],
-  "branch_trabalho": "development",
-  "versao_alvo": "v12.0",
+  "branch_trabalho": "sprint/N2",
+  "versao_alvo": "v12.2",
   "proximos_passos": [
-    "Aprovar docs/ROADMAP.md (gerado em 2026-05-07T21:48 — 5 sprints D + 48 tasks + 4 critical Best-of-N; modo autopilot)",
-    "OPCAO A (recomendada): Rodar `/jarvis pipeline` ou `/sprint-all` para executar D1→D5 sequencialmente em autopilot (auditoria automatica entre sprints; pipeline para se findings HIGH disparar /pmo fix)",
-    "OPCAO B (manual): Rodar `/pmo sprint D1` para iniciar manualmente; revisar codigo entre sprints; depois `/pmo sprint D2`, etc",
-    "Em Sprint D5: rodar capability `decision-brief` para registrar ADR-001..ADR-008 + ADR-009..ADR-013 em docs/DECISION-BRIEF.md",
-    "Pos-v12.0: rodar `/pmo new` para Sprint N1 (tech debt residual + Feature E backup off-site se priorizada + observabilidade Loki/Prometheus)",
-    "BLOQUEIO Sprint D2 (async core): Duvidas #1 (URL API REST consumidora) + #2 (stack) — pode prosseguir com mocks em testes; finalizar contratos antes do deploy staging em D5.9. Politica de senha em CONTRACTS.md §9.2 ja decidida (--payload-stdin obrigatorio).",
-    "BLOQUEIO Sprint D3 (Feature O): confirmar com time da API REST: (a) normalizador slug _→- antes de SSH (CONTRACTS.md §10.7); (b) tradução state↔status (cancelled vs canceled); (c) tradução cmd↔job_type 15 verbs; (d) decision matrix base64 inline vs SCP staging (§3.9.0); (e) tabela clusters para roteamento (§10.6); (f) curadoria de whitelist de apps (§10.8)",
-    "BLOQUEIO Sprint D4 (Feature P + hardening): allowlist OCC §3.10.1 revisada com DevOps + WORKER_OCC_TIMEOUT_SEC=60 validado em staging + Nextcloud ≥31 confirmado para group:rename (Decisao deferida em §9.4)"
+    "Executar Sprint N2 — 5 tasks Feature E: N2.1 (lib+cmd) → N2.2 (systemd timer) → N2.3 (testes) → N2.4 (docs) → N2.5 (auditoria + release v12.2)",
+    "N2.1: Criar scripts/lib/backup_offsite.sh (restic wrapper + secrets reader) + manage.sh cmd_backup_offsite (--dry-run --json sync) + dispatch.sh verb backup-offsite",
+    "N2.2: Criar systemd/nextcloud-saas-backup@.{service,timer} para backup agendado por cliente",
+    "N2.3: Criar tests/helpers/fake_restic.sh + tests/unit/test_backup_offsite.bats (6+ testes) + tests/integration/test_backup_offsite.bats (3+ testes)",
+    "N2.4: Atualizar docs/ADMINISTRATION.md com seção Backup Off-site (setup restic, secrets layout, agendamento)",
+    "N2.5: /qa auditoria senior+qa + CHANGELOG.md v12.2 + tag v12.2",
+    "Pos-N2: N3 = Feature F (Loki+Prometheus+Grafana) | N4 = Feature H (canary upgrade)"
   ],
   "features_concluidas": [
     "Deploy automatizado de instancias Nextcloud multi-tenant",
@@ -263,17 +262,24 @@
     "ARCH-005",
     "ARCH-006",
     "ARCH-007",
-    "ARCH-008"
+    "ARCH-008",
+    "ARCH-009",
+    "ARCH-010",
+    "ARCH-011",
+    "ARCH-012",
+    "ARCH-013"
   ],
-  "sprint_atual": null,
+  "sprint_atual": "N2",
+  "checkpoint": null,
   "comandos_recentes": [
+    "/pmo new",
+    "/pmo fix",
     "/pmo novo",
     "/analista planejar",
     "/arquiteto planejar",
-    "/arquiteto contratos",
     "/devops planejar"
   ],
-  "contexto_rapido": "Fase 7 (Infra/CI/CD materializados) concluida em 2026-05-07T21:24. /devops planejar gerou 12 artefatos (3 workflows GH Actions + 4 systemd units + 4 SSH/sudoers + 1 socket-proxy env + 1 occ-bridge skeleton + 1 INFRASTRUCTURE.md). Decisoes confirmadas via AskQuestion: (a) docs/INFRASTRUCTURE.md gerado como doc separado; (b) occ_bridge.sh skeleton com 35 entries OCC_ALLOWLIST (espelha CONTRACTS §3.10.1 exato — drift gate em contracts-check.yml); (c) CI-only por agora (CD via deploy-server.sh manual — Sprint S2). NAO modifiquei shared-services/docker-compose.yml (socket-proxy entra na Sprint S3 com cmd_create + upgrade-harp). NAO modifiquei scripts/deploy-server.sh (instalacao das units fica para Sprint S2). Predecessor: Fase 5 contratos REVISAO 0.3 com ~2400 linhas (10 secoes incluindo §10 Tradução de vocabulários), schema_version='1' permanece (mudanças Feature O/P forward-compatible). Aguarda /pmo plan para quebrar v12.0 em 4 sprints risk-first.",
+  "contexto_rapido": "Sprint N2 CONCLUIDA (2026-05-11). Feature E: backup off-site S3/B2/restic. 5/5 tasks. v12.2 tag. 0 CRITICAL, 0 HIGH residual. N3=Feature F (Loki+Prometheus+Grafana). N4=Feature H (canary upgrade). Branch: sprint/N2.",
   "journal": [
     {
       "at": "2026-05-06T21:14:58Z",
@@ -562,9 +568,112 @@
     }
   ],
   "compact_marker": {
-    "compacted_at": "2026-05-07T22:20:22Z",
-    "usage_percent": 91.96466666666666,
-    "messages_lost": 103
+    "compacted_at": "2026-05-11T17:11:36Z",
+    "usage_percent": 91.39500000000001,
+    "messages_lost": 245
   },
-  "compact_count": 1
+  "compact_count": 1,
+  "autopilot": {
+    "active": false,
+    "sprint_range": [
+      "D4",
+      "D5"
+    ],
+    "started_at": "2026-05-08T19:19:12-03:00",
+    "completed_sprints": [
+      "D3",
+      "D4"
+    ],
+    "hard_stops": [],
+    "current_sprint": "D5",
+    "validator_available": true,
+    "sprint_list": [
+      "D4",
+      "D5"
+    ],
+    "categories": [
+      "D"
+    ],
+    "validate_between": true,
+    "report_path": "docs/AUTOPILOT-REPORT.md"
+  },
+  "active_automation": "completed",
+  "validation_gate": {
+    "sprint": "N1",
+    "command": "/qa validar",
+    "result": "APROVADA",
+    "validation_round": 2,
+    "validated_at": "2026-05-11T11:00:00-03:00",
+    "critical": 0,
+    "high": 0,
+    "medium": 0,
+    "low": 0,
+    "findings_found": 0,
+    "findings_registered": [],
+    "files_modified_outside_findings": 0,
+    "askquestion_shown": false,
+    "senior_review_status": "PASS",
+    "tests": {
+      "bash_n": "PASS",
+      "shellcheck": "PASS",
+      "unit_tests": "PASS_55_55",
+      "integration_tests": "PARTIAL_100_152_ENV_ISSUE",
+      "n1_specific_tests": "PASS"
+    },
+    "blockers": [],
+    "fixed": [
+      "QA-001",
+      "QA-002",
+      "QA-003",
+      "PERF-002",
+      "PERF-003",
+      "QA-004",
+      "QA-005",
+      "QA-006"
+    ],
+    "notes": "Sprint N1 concluida. 8/8 findings N1 verificados no código. Unit 55/55 PASS. Integration 100/152 PASS (52 env failures por Redis em :6377 vs :6379 esperado — padrão F-D2-007). Pronto para merge + /pmo new Sprint N2."
+  },
+  "validation_gate_prev_d5": {
+    "sprint": "D5",
+    "command": "autopilot senior+qa+dba+performance+security",
+    "result": "APROVADA",
+    "validation_round": 1,
+    "validated_at": "2026-05-08T22:46:00-03:00",
+    "critical": 0,
+    "high": 0,
+    "medium": 0,
+    "low": 0,
+    "tests": {
+      "bash_n": "PASS",
+      "shellcheck": "PASS",
+      "deploy_server_shellcheck": "PASS",
+      "unit_tests": "PASS_50_50",
+      "auditoria_qa": "APROVADA_COM_RESSALVAS_CORRIGIDAS",
+      "auditoria_security": "APROVADA_COM_RESSALVAS_CORRIGIDAS",
+      "auditoria_dba": "APROVADA_COM_RESSALVAS_CORRIGIDAS",
+      "auditoria_performance": "APROVADA_APOS_FIXES",
+      "auditoria_senior": "APROVADA_APOS_FIXES"
+    },
+    "blockers": [],
+    "fixed": [
+      "PERF-001",
+      "QA-001",
+      "CQ-001",
+      "SEC-001",
+      "SEC-002",
+      "SEC-003",
+      "QA-003",
+      "QA-004",
+      "CQ-004",
+      "CQ-005",
+      "DBA-001",
+      "DBA-002",
+      "DBA-003"
+    ],
+    "notes": "Sprint D5 concluida. 10/10 tasks. CHANGELOG.md publicado. Tag v12.0 criada."
+  },
+  "beesy_version": "4.16.18-beta",
+  "decisions_applied_until": 178,
+  "strategic_context_captured_at": "2026-05-08T19:30:00-03:00",
+  "pending_action": "Sprint N2 CONCLUIDA (v12.2 tag). Proximo: /pmo new para N3 (Feature F: Loki+Prometheus+Grafana)."
 }

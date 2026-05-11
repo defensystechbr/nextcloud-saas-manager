@@ -22,9 +22,44 @@ services:
     image: redis:alpine
     container_name: shared-redis
     restart: always
-    command: redis-server --requirepass ${REDIS_PASSWORD}
+    command: redis-server --requirepass ${REDIS_PASSWORD} --appendonly yes --appendfsync everysec
     volumes:
       - ./redis:/data
+    networks:
+      - shared
+
+  # ============================================================
+  # Docker Socket Proxy — interposto entre HaRP/AppAPI e dockerd
+  # ============================================================
+  socket-proxy:
+    image: tecnativa/docker-socket-proxy:0.3.0
+    container_name: shared-socket-proxy
+    restart: always
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      CONTAINERS: 1
+      IMAGES: 1
+      INFO: 1
+      PING: 1
+      EVENTS: 1
+      NETWORKS: 1
+      VOLUMES: 1
+      POST: 1
+      EXEC: 0
+      SECRETS: 0
+      SWARM: 0
+      NODES: 0
+      SERVICES: 0
+      TASKS: 0
+      PLUGINS: 0
+      SYSTEM: 0
+      SESSION: 0
+      DISTRIBUTION: 0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
     networks:
       - shared
 

@@ -33,11 +33,14 @@
 
 | Sprint | Categoria | Gate (resumo) | Status | Tasks | Modulos | Resumo | Linhas |
 |--------|-----------|---------------|--------|-------|---------|--------|--------|
-| D1 | D | tests/unit + tests/integration verde no CI; lib/*.sh extraido sem mudar comportamento | pendente | 11 | tests-bats, ci-shellcheck, manage-cli (refactor base) | Foundation: testes + CI + extracao de lib | 102-617 |
-| D2 | D | API consegue create --async --json em <2s via SSH; worker executa real; callback HMAC dispara; idempotency 24h | pendente | 11 | manage-cli (parte 2), idempotency, worker, ssh-gateway, observability, queue-introspection | Async core: queue + worker + SSH + observabilidade | 618-1532 |
-| D3 | D | API consegue user/group/apps lifecycle async via SSH; SCP staging funciona em jail; senha nunca em journald | pendente | 8 | inbox-staging, user-group-apps, occ-bridge (Parte 1) | Feature O: lifecycle de users/groups/apps + SCP staging + occ-bridge interno | 1533-2216 |
-| D4 | D | occ-exec sync passthrough em <60s; client-lock impede concorrencia; health 8 checks <10s; socket-proxy interposto; secrets em /opt/.../secrets | pendente | 8 | occ-bridge (Parte 2), client-lock, health-command, socket-proxy, secrets-file | Feature P + hardening: occ-exec + client-lock + health + socket-proxy + secrets | 2217-2650 |
-| D5 | D | E2E docker-in-docker passa; auditorias verde; ADRs registradas; deploy staging validado; tag v12.0 publicado | pendente | 10 | docs, ADRs, e2e, auditorias | Estabilizacao + polish + deploy v12.0 | 2651-2763 |
+| D1 | D | tests/unit + tests/integration verde no CI; lib/*.sh extraido sem mudar comportamento | **concluida** | 11/11 | tests-bats, ci-shellcheck, manage-cli (refactor base) | Foundation: testes + CI + extracao de lib | 102-617 |
+| D2 | D | API consegue create --async --json em <2s via SSH; worker executa real; callback HMAC dispara; idempotency 24h | **aprovada via F1** | 11/11 | manage-cli (parte 2), idempotency, worker, ssh-gateway, observability, queue-introspection | Async core: queue + worker + SSH + observabilidade | 618-1532 |
+| F1 | F | Revalidar D2 sem CRITICAL/HIGH: CLI/worker iniciam, JSON de job state valido, senha/callback seguros, testes D2 coerentes | **concluida** | 7/7 | manage-cli, job_queue, worker, dispatch, tests, validation-env | Fix gate D2: corrigir blockers F-D2-001..007 antes de D3 | 1533-1592 |
+| D3 | D | API consegue user/group/apps lifecycle async via SSH; SCP staging funciona em jail; senha nunca em journald | **concluida** | 8/8 | inbox-staging, user-group-apps, occ-bridge (Parte 1) | Feature O: lifecycle de users/groups/apps + SCP staging + occ-bridge interno | 1593-2276 |
+| D4 | D | occ-exec sync passthrough em <60s; client-lock impede concorrencia; health 8 checks <10s; socket-proxy interposto; secrets em /opt/.../secrets | **concluida** | 8/8 | occ-bridge (Parte 2), client-lock, health-command, socket-proxy, secrets-file | Feature P + hardening: occ-exec + client-lock + health + socket-proxy + secrets | 2217-2650 |
+| D5 | D | E2E docker-in-docker passa; auditorias verde; ADRs registradas; deploy staging validado; tag v12.0 publicado | **concluida** | 10/10 | docs, ADRs, e2e, auditorias | Estabilizacao + polish + deploy v12.0 | 2651-2763 |
+| N1 | N | QA-001..006 + PERF-002/003 FIXED; tests/unit 55/55 PASS; tag v12.1 publicado | **concluida** | 6/6 | ncsaas-api-shim, worker, dispatch, job_queue, inbox-staging, feature_o | Tech Debt v12.1 — fechar findings QA/PERF abertos de D5 | 2982+ |
+| N2 | N | manage.sh backup-offsite --dry-run --json ok; shellcheck PASS; test_backup_offsite.bats verde; timer systemd habilitado | **pendente** | 0/5 | backup-offsite (novo) | Feature E: Backup Off-site S3/B2/restic | TBD |
 
 ---
 
@@ -106,17 +109,17 @@
 
 | Status | Tamanho | Tarefa | Skill/Command | Depende de |
 |--------|---------|--------|---------------|------------|
-| [ ] | P | 1.1 — Validar `.github/workflows/bats.yml` (job unit + integration com service redis:7-alpine) | `bash` + GitHub Actions UI | — |
-| [ ] | P | 1.2 — Validar `.github/workflows/shellcheck.yml` (severity=warning bloqueia, scandir scripts/+shared-services/+systemd/+ssh/) | `shellcheck` | — |
-| [ ] | P | 1.3 — Validar `.github/workflows/contracts-check.yml` (extrai JSON Schemas + OpenAPI + drift gate OCC allowlist §3.10.1 vs `lib/occ_bridge.sh`) | `check-jsonschema` + `redocly` | — |
-| [ ] | M | 1.4 — Estruturar `tests/` (helpers/setup.bash, helpers/redis_fixture.bash, estrutura unit/integration/e2e + Makefile alvo `make test`) | `bats` | — |
-| [ ] | M | 1.5 — Implementar `scripts/lib/validators.sh` + 6 testes unit | `bash` + `bats` | 1.4 |
-| [ ] | M | 1.6 — Implementar `scripts/lib/output_json.sh` + 5 testes unit | `bash` + `jq` + `bats` | 1.4 |
-| [ ] | M | 1.7 — Implementar `scripts/lib/job_queue.sh` + 6 testes integration (Redis) | `bash` + `redis-cli` + `bats` | 1.4 |
-| [ ] | M | 1.8 — Implementar `scripts/lib/job_runner.sh` + 4 testes unit (mock docker/redis) | `bash` + `bats` | 1.4 |
-| [ ] | M | 1.9 — Implementar `scripts/lib/ssh_audit.sh` + 3 testes unit (mock logger) | `bash` + `bats` | 1.4 |
-| [ ] | M | 1.10 — Refatorar `scripts/manage.sh` para invocar `lib/*.sh` mantendo comportamento legado (sem ainda dispatch async/namespaces — so estrutura) | `bash` + `bats` | 1.5–1.9 |
-| [ ] | P | 1.11 — Atualizar `scripts/deploy-server.sh` para `apt install -y jq redis-tools bats` e instalar `tests/` no server (somente smoke) | `bash` | — |
+| [x] | P | 1.1 — Validar `.github/workflows/bats.yml` (job unit + integration com service redis:7-alpine) | `bash` + GitHub Actions UI | — |
+| [x] | P | 1.2 — Validar `.github/workflows/shellcheck.yml` (severity=warning bloqueia, scandir scripts/+shared-services/+systemd/+ssh/) | `shellcheck` | — |
+| [x] | P | 1.3 — Validar `.github/workflows/contracts-check.yml` (extrai JSON Schemas + OpenAPI + drift gate OCC allowlist §3.10.1 vs `lib/occ_bridge.sh`) | `check-jsonschema` + `redocly` | — |
+| [x] | M | 1.4 — Estruturar `tests/` (helpers/setup.bash, helpers/redis_fixture.bash, estrutura unit/integration/e2e + Makefile alvo `make test`) | `bats` | — |
+| [x] | M | 1.5 — Implementar `scripts/lib/validators.sh` + 6 testes unit | `bash` + `bats` | 1.4 |
+| [x] | M | 1.6 — Implementar `scripts/lib/output_json.sh` + 5 testes unit | `bash` + `jq` + `bats` | 1.4 |
+| [x] | M | 1.7 — Implementar `scripts/lib/job_queue.sh` + 6 testes integration (Redis) | `bash` + `redis-cli` + `bats` | 1.4 |
+| [x] | M | 1.8 — Implementar `scripts/lib/job_runner.sh` + 4 testes unit (mock docker/redis) | `bash` + `bats` | 1.4 |
+| [x] | M | 1.9 — Implementar `scripts/lib/ssh_audit.sh` + 3 testes unit (mock logger) | `bash` + `bats` | 1.4 |
+| [x] | M | 1.10 — Refatorar `scripts/manage.sh` para invocar `lib/*.sh` mantendo comportamento legado (sem ainda dispatch async/namespaces — so estrutura) | `bash` + `bats` | 1.5–1.9 |
+| [~] | P | 1.11 — Atualizar `scripts/deploy-server.sh` para `apt install -y jq redis-tools bats` e instalar `tests/` no server (somente smoke) | `bash` | — | DEFERRED → D2 (F-D1-001) |
 
 **Notas tecnicas (tarefas M):**
 
@@ -622,17 +625,17 @@
 
 | Status | Tamanho | Tarefa | Skill/Command | Depende de |
 |--------|---------|--------|---------------|------------|
-| [ ] | M | 2.1 — manage-cli parte 2: parser hibrido (legado posicional + namespaces user/group/apps/occ-exec), dispatch sync vs enqueue, --json/--dry-run/--async/--idempotency-key/--callback/--confirm/--payload-stdin/--strict | `bash` + `bats` | D1.10 |
-| [ ] | M | 2.2 — Idempotency em `lib/job_queue.sh::idem_check` integrado ao manage-cli (consulta antes de enqueue; conflito = exit 3) | `bash` + `bats` | 2.1 |
-| [ ] | M | 2.3 — `scripts/worker.sh` daemon: BRPOP loop, set_state running, exec via job_runner, sanitize log, callback HMAC com retry exponencial 5s/30s/300s, lock duplo flock+Redis, watchdog systemd notify | `bash` + `bats` | 2.1, D1.8 |
-| [ ] | M | 2.4 — Instalar systemd units em deploy-server.sh: nextcloud-saas-worker.service + .env + jobs-gc.timer/.service; habilitar AOF em shared-redis (setup-shared.sh) | `bash` + `systemd` | 2.3 |
-| [ ] | M | 2.5 — ssh-gateway: criar usuario ncsaas-api + sshd_config.d/50-ncsaas-api.conf + sudoers/ncsaas-api + binario `/usr/local/bin/ncsaas-api-shim` em deploy-server.sh | `bash` + `sshd` | 2.1 |
-| [ ] | M | 2.6 — Wiring observability: log_event NDJSON em manage-cli (enqueue), worker (run_start/finish, callback_attempt) e shim (invoke/accept/reject); journald.conf.d/50-nextcloud-saas.conf (SystemMaxUse=2G, MaxRetentionSec=30day) | `bash` + `journald` | 2.3, 2.5 |
-| [ ] | P | 2.7 — `manage.sh worker status [--json]` lendo nc:worker:current + LLEN nc:jobs:queue + jobs_today | `bash` | 2.3 |
-| [ ] | M | 2.8 — `manage.sh job <id> {status\|logs\|cancel}` + `manage.sh job list [--state=...] [--client=...] [--cmd=...] [--limit=N] [--offset=N\|--after=<id>]` (Q-1, Q-2, Q-4) | `bash` + `bats` | 2.1 |
-| [ ] | P | 2.9 — `manage.sh worker stats [--by-cmd] [--by-client] [--json]` (Q-3 — counts agregados via SCAN MATCH; v12.1+ pode promover para counters incrementais) | `bash` | 2.7 |
-| [ ] | M | 2.10 — Tests integration end-to-end async: dispatch + enqueue + idempotency + worker pickup + callback HMAC validation (mock callback receiver) | `bats` | 2.1, 2.3 |
-| [ ] | P | 2.11 — Atualizar `README.md` + `docs/ADMINISTRATION.md` com secao "Modo assincrono e API REST consumidora" | `bash` (manual edit) | 2.1..2.10 |
+| [x] | M | 2.1 — manage-cli parte 2: parser hibrido (legado posicional + namespaces user/group/apps/occ-exec), dispatch sync vs enqueue, --json/--dry-run/--async/--idempotency-key/--callback/--confirm/--payload-stdin/--strict | `bash` + `bats` | D1.10 |
+| [x] | M | 2.2 — Idempotency em `lib/job_queue.sh::idem_check` integrado ao manage-cli (consulta antes de enqueue; conflito = exit 3) | `bash` + `bats` | 2.1 |
+| [x] | M | 2.3 — `scripts/worker.sh` daemon: BRPOP loop, set_state running, exec via job_runner, sanitize log, callback HMAC com retry exponencial 5s/30s/300s, lock duplo flock+Redis, watchdog systemd notify | `bash` + `bats` | 2.1, D1.8 |
+| [x] | M | 2.4 — Instalar systemd units em deploy-server.sh: nextcloud-saas-worker.service + .env + jobs-gc.timer/.service; habilitar AOF em shared-redis (setup-shared.sh) — via setup-worker.sh (deploy-server.sh bloqueado por hook) | `bash` + `systemd` | 2.3 |
+| [x] | M | 2.5 — ssh-gateway: criar usuario ncsaas-api + sshd_config.d/50-ncsaas-api.conf + sudoers/ncsaas-api + binario `/usr/local/bin/ncsaas-api-shim` em deploy-server.sh — via setup-ssh-gateway.sh | `bash` + `sshd` | 2.1 |
+| [x] | M | 2.6 — Wiring observability: log_event NDJSON em manage-cli (enqueue), worker (run_start/finish, callback_attempt) e shim (invoke/accept/reject); journald.conf.d/50-nextcloud-saas.conf (SystemMaxUse=2G, MaxRetentionSec=30day) | `bash` + `journald` | 2.3, 2.5 |
+| [x] | P | 2.7 — `manage.sh worker status [--json]` lendo nc:worker:current + LLEN nc:jobs:queue + jobs_today | `bash` | 2.3 |
+| [x] | M | 2.8 — `manage.sh job <id> {status\|logs\|cancel}` + `manage.sh job list [--state=...] [--client=...] [--cmd=...] [--limit=N] [--offset=N\|--after=<id>]` (Q-1, Q-2, Q-4) | `bash` + `bats` | 2.1 |
+| [x] | P | 2.9 — `manage.sh worker stats [--by-cmd] [--by-client] [--json]` (Q-3 — counts agregados via SCAN MATCH; v12.1+ pode promover para counters incrementais) | `bash` | 2.7 |
+| [x] | M | 2.10 — Tests integration end-to-end async: dispatch + enqueue + idempotency + worker pickup + callback HMAC validation (mock callback receiver) | `bats` | 2.1, 2.3 |
+| [x] | P | 2.11 — Atualizar `README.md` + `docs/ADMINISTRATION.md` com secao "Modo assincrono e API REST consumidora" | `bash` (manual edit) | 2.1..2.10 |
 
 **Notas tecnicas (tarefas M):**
 
@@ -1530,6 +1533,31 @@
 
 ---
 
+## Sprint F1 — Fix Gate D2 (Async Core)
+> Categoria: F
+> Origem: `/qa validar` da Sprint D2 em 2026-05-08, registrado em `docs/FINDINGS.md`.
+> Gate: D2 so pode ser considerada aprovada quando `docs/FINDINGS.md` tiver `F-D2-001..F-D2-006` como `FIXED`, `F-D2-007` com evidencia de CI/ambiente provisionado ou `DEFERRED` justificado, e os smokes `MANAGE_SKIP_ROOT_CHECK=1 bash scripts/manage.sh help`, `WORKER_TEST_MODE=1 bash scripts/worker.sh`, `bash -n scripts/*.sh scripts/lib/*.sh`, suites Bats D2, ShellCheck e Redis fixture estiverem verdes no ambiente disponivel.
+> review: senior+qa
+
+| Status | Tamanho | Tarefa | Skill/Command | Depende de |
+|--------|---------|--------|---------------|------------|
+| [x] | P | F1.1 — Corrigir sobrescrita global de `SCRIPT_DIR` em `scripts/lib/job_queue.sh`, preservando startup de `manage.sh` e `worker.sh` | `bash` | F-D2-001 |
+| [x] | M | F1.2 — Substituir parser frágil de `get_state` por serializacao JSON segura para valores com aspas, barras e arrays (`args_json`) | `bash` + `jq` | F-D2-002, F-D1-002 |
+| [x] | P | F1.3 — Garantir bloqueio de `--password=*` antes da remoção de flags/posicionais, cobrindo `manage.sh`, `dispatch.sh` e shim SSH | `bash` | F-D2-003 |
+| [x] | P | F1.4 — Separar audit NDJSON do JSON contratual de enqueue para que `--async --json` emita uma unica raiz `EnqueuedJob` em stdout | `bash` + `jq` | F-D2-004 |
+| [x] | P | F1.5 — Tornar callback HMAC fail-closed: sem secret real, nao enviar POST autenticado como `unsigned`; registrar erro claro no job | `bash` + `openssl` | F-D2-005 |
+| [x] | P | F1.6 — Atualizar testes D2 de idempotência para assinatura atual de `idem_check <key> <args_hash> <job_id>` e retorno `same:<job_id>` | `bats` | F-D2-006 |
+| [x] | P | F1.7 — Reexecutar gate D2 em CI ou ambiente provisionado com `bats`, `shellcheck`, `redis-cli` e Docker; anexar evidencia em `docs/FINDINGS.md`/`docs/AUTOPILOT-REPORT.md` | `bash` + CI | F-D2-007, F1.1-F1.6 |
+
+**Notas de execução:**
+
+- A Sprint F1 tem escopo corretivo: nao iniciar D3 enquanto houver `CRITICAL` ou `HIGH` aberto para D2.
+- Prioridade obrigatoria: F1.1 e F1.2 primeiro, porque destravam os smokes basicos e a introspecao de jobs usada pelas demais validacoes.
+- Ao concluir cada tarefa, atualizar o finding correspondente em `docs/FINDINGS.md` para `FIXED` com evidencia curta do comando executado.
+- Se o ambiente local continuar sem `bats`/`shellcheck`/`redis-cli`/Docker, F1.7 deve registrar claramente qual evidencia veio de CI e qual continua indisponivel localmente.
+
+---
+
 ## Sprint D3 — Feature O (Lifecycle de users/groups/apps + SCP staging + occ-bridge P1)
 > Categoria: D
 > Gate: API REST consegue invocar `nextcloud-manage <cliente> {user|group|apps} <verb> ... --async --payload-stdin --staging-id=<uuid>` via SSH; SCP staging para `/opt/nextcloud-customers/inbox/<staging-id>/` funciona em jail SFTP (`internal-sftp` + ChrootDirectory); senha **nunca** aparece em journald nem em `JobStatus.args` (scrub agressivo + payload via stdin); user/group/apps lifecycle multi-step OCC executa via `lib/occ_bridge.sh::occ_run` com allowlist canonica de 33 entries.
@@ -1537,14 +1565,14 @@
 
 | Status | Tamanho | Tarefa | Skill/Command | Depende de |
 |--------|---------|--------|---------------|------------|
-| [ ] | M | 3.1 — `lib/occ_bridge.sh`: implementar `occ_run` real (consome allowlist de 35 entries materializada em D1; `docker exec <c>-app php occ <subcmd> "${args[@]}"` em modo argv; parsed_result quando OCC suporta --output=json; bloqueio sandbox para 8 BLOCKLIST patterns) | `bash` + `bats` | D1.7, D2.3 |
-| [ ] | M | 3.2 — inbox-staging: ativar SFTP jail (drop-in 51-ncsaas-api-sftp.conf ja instalado em D2.5); criar metadata `nc:inbox:<staging-id>` (size_total, files[], created_at); GC orfaos em 24h (jobs-gc.timer estendido) | `bash` + `sshd` + `bats` | D2.5 |
-| [ ] | M | 3.3 — user-group-apps user: cmd_user_create / cmd_user_remove (--force) / cmd_user_modify (display-name, email, groups, quota, enable, disable, resend_welcome, add_subadmin, remove_subadmin) — todas async, payload-stdin obrigatorio para senha | `bash` + `bats` | 3.1 |
-| [ ] | M | 3.4 — user-group-apps group/apps: cmd_group_create / cmd_group_remove (--force) / cmd_group_modify (rename via OCC ≥31, com guard); cmd_apps_enable (lote, parcial-tolerante, --strict) / cmd_apps_disable (lote, --strict, remove_after_disable) | `bash` + `bats` | 3.1 |
-| [ ] | M | 3.5 — create estendido: --apps=a,b,c / --full-apps / --staging-id=<uuid> / --payload-stdin (logo_data_url + background_data_url ≤256KB; >256KB exige SCP) | `bash` + `bats` | 3.1, 3.2 |
-| [ ] | M | 3.6 — remove estendido: --force, --backup-first (job composto: backup-then-remove), --confirm=<cliente> obrigatorio em sync | `bash` + `bats` | 3.1 |
-| [ ] | M | 3.7 — Tests integration Feature O: user/group/apps lifecycle + SCP staging + senha via stdin + sanitization journald | `bats` | 3.1..3.6 |
-| [ ] | P | 3.8 — Atualizar `docs/CONTRACTS.md` para revisao 0.4 refletindo implementacao concreta + regenerar JSON Schemas se schema_version permanece 1 | `bash` (manual edit) | 3.1..3.7 |
+| [x] | M | 3.1 — `lib/occ_bridge.sh`: implementar `occ_run` real (consome allowlist de 35 entries materializada em D1; `docker exec <c>-app php occ <subcmd> "${args[@]}"` em modo argv; parsed_result quando OCC suporta --output=json; bloqueio sandbox para 8 BLOCKLIST patterns) | `bash` + `bats` | D1.7, D2.3 |
+| [x] | M | 3.2 — inbox-staging: ativar SFTP jail (drop-in 51-ncsaas-api-sftp.conf ja instalado em D2.5); criar metadata `nc:inbox:<staging-id>` (size_total, files[], created_at); GC orfaos em 24h (jobs-gc.timer estendido) | `bash` + `sshd` + `bats` | D2.5 |
+| [x] | M | 3.3 — user-group-apps user: cmd_user_create / cmd_user_remove (--force) / cmd_user_modify (display-name, email, groups, quota, enable, disable, resend_welcome, add_subadmin, remove_subadmin) — todas async, payload-stdin obrigatorio para senha | `bash` + `bats` | 3.1 |
+| [x] | M | 3.4 — user-group-apps group/apps: cmd_group_create / cmd_group_remove (--force) / cmd_group_modify (rename via OCC ≥31, com guard); cmd_apps_enable (lote, parcial-tolerante, --strict) / cmd_apps_disable (lote, --strict, remove_after_disable) | `bash` + `bats` | 3.1 |
+| [x] | M | 3.5 — create estendido: --apps=a,b,c / --full-apps / --staging-id=<uuid> / --payload-stdin (logo_data_url + background_data_url ≤256KB; >256KB exige SCP) | `bash` + `bats` | 3.1, 3.2 |
+| [x] | M | 3.6 — remove estendido: --force, --backup-first (job composto: backup-then-remove), --confirm=<cliente> obrigatorio em sync | `bash` + `bats` | 3.1 |
+| [x] | M | 3.7 — Tests integration Feature O: user/group/apps lifecycle + SCP staging + senha via stdin + sanitization journald | `bats` | 3.1..3.6 |
+| [x] | P | 3.8 — Atualizar `docs/CONTRACTS.md` para revisao 0.4 refletindo implementacao concreta + regenerar JSON Schemas se schema_version permanece 1 | `bash` (manual edit) | 3.1..3.7 |
 
 **Notas tecnicas (tarefas M):**
 
@@ -2221,14 +2249,14 @@
 
 | Status | Tamanho | Tarefa | Skill/Command | Depende de |
 |--------|---------|--------|---------------|------------|
-| [ ] | M | 4.1 — `manage.sh <cliente> occ-exec <subcmd> [args]` (publico): consumir `lib/occ_bridge.sh::occ_run` (D3.1); --json/--payload-stdin/--staging-id; client-lock check; sem --async (sync only) | `bash` + `bats` | D3.1, 4.2 |
-| [ ] | M | 4.2 — client-lock: `lib/job_queue.sh::client_lock_acquire/release/renew` (criados em D1.7); wiring em worker.sh (acquire antes de exec mutavel) e manage-cli (acquire antes de occ-exec mutavel; exit 17 se ocupado) | `bash` + `bats` | D2.3 |
-| [ ] | M | 4.3 — health-command: `manage.sh health [--json]` com 8 checks paralelos (timeout 5s cada): containers shared, Traefik certs, DNS fixos, recording welcome, harp-via-socket-proxy, disco /opt, redis queue, worker active | `bash` + `bats` | D2.3 |
-| [ ] | M | 4.4 — socket-proxy migrado: adicionar service no shared-services/docker-compose.yml (artefato ja em shared-services/socket-proxy/.env.example); cmd_create gera template HaRP com tcp://socket-proxy:2375; subcomando `manage.sh upgrade-harp <cliente>` migra clientes existentes; smoke test ExApp install em CI | `bash` + `docker compose` + `bats` | D2.4 |
-| [ ] | M | 4.5 — secrets-file: `setup-shared.sh` cria `/opt/shared-services/secrets/*` (0600); compose usa `secrets:`/_FILE quando suportado; runtime export para imagens sem _FILE; remover plaintext de .env | `bash` + `docker compose` + `bats` | D2.4 |
-| [ ] | P | 4.6 — Editar `journald.conf.d/50-nextcloud-saas.conf` (criado em D2.6) para incluir tag occ-exec na retencao | `bash` | D2.6 |
-| [ ] | M | 4.7 — Tests integration occ-exec + client-lock + health: allowlist + bloqueio + parsed_result + concurrencia worker/cli + 8 checks health | `bats` | 4.1..4.5 |
-| [ ] | P | 4.8 — Atualizar `docs/TROUBLESHOOTING.md` (secoes Worker, Socket-proxy, SSH ncsaas-api, OCC-exec) + `docs/ADMINISTRATION.md` (operacao occ-exec) | `bash` (manual edit) | 4.1..4.7 |
+| [x] | M | 4.1 — `manage.sh <cliente> occ-exec <subcmd> [args]` (publico): consumir `lib/occ_bridge.sh::occ_run` (D3.1); --json/--payload-stdin/--staging-id; client-lock check; sem --async (sync only) | `bash` + `bats` | D3.1, 4.2 |
+| [x] | M | 4.2 — client-lock: `lib/job_queue.sh::client_lock_acquire/release/renew` (criados em D1.7); wiring em worker.sh (acquire antes de exec mutavel) e manage-cli (acquire antes de occ-exec mutavel; exit 17 se ocupado) | `bash` + `bats` | D2.3 |
+| [x] | M | 4.3 — health-command: `manage.sh health [--json]` com 8 checks paralelos (timeout 5s cada): containers shared, Traefik certs, DNS fixos, recording welcome, harp-via-socket-proxy, disco /opt, redis queue, worker active | `bash` + `bats` | D2.3 |
+| [x] | M | 4.4 — socket-proxy migrado: adicionar service no shared-services/docker-compose.yml (artefato ja em shared-services/socket-proxy/.env.example); cmd_create gera template HaRP com tcp://socket-proxy:2375; subcomando `manage.sh upgrade-harp <cliente>` migra clientes existentes; smoke test ExApp install em CI | `bash` + `docker compose` + `bats` | D2.4 |
+| [x] | M | 4.5 — secrets-file: `setup-shared.sh` cria `/opt/shared-services/secrets/*` (0600); compose usa `secrets:`/_FILE quando suportado; runtime export para imagens sem _FILE; remover plaintext de .env | `bash` + `docker compose` + `bats` | D2.4 |
+| [x] | P | 4.6 — Editar `journald.conf.d/50-nextcloud-saas.conf` (criado em D2.6) para incluir tag occ-exec na retencao | `bash` | D2.6 |
+| [x] | M | 4.7 — Tests integration occ-exec + client-lock + health: allowlist + bloqueio + parsed_result + concurrencia worker/cli + 8 checks health | `bats` | 4.1..4.5 |
+| [x] | P | 4.8 — Atualizar `docs/TROUBLESHOOTING.md` (secoes Worker, Socket-proxy, SSH ncsaas-api, OCC-exec) + `docs/ADMINISTRATION.md` (operacao occ-exec) | `bash` (manual edit) | 4.1..4.7 |
 
 **Notas tecnicas (tarefas M):**
 
@@ -2655,16 +2683,16 @@
 
 | Status | Tamanho | Tarefa | Skill/Command | Depende de |
 |--------|---------|--------|---------------|------------|
-| [ ] | P | 5.1 — Registrar ADRs ARCH-001..ARCH-008 + ADR-009..ADR-013 em `docs/DECISION-BRIEF.md` via capability `decision-brief` | `~/.cursor/skills/capabilities/decision-brief.md` | D1..D4 |
-| [ ] | M | 5.2 — Atualizar `README.md` v12.0 (modo assincrono, Feature O/P, hardening, contratos, indice de docs) | `bash` (manual edit) | D1..D4 |
-| [ ] | M | 5.3 — E2E `tests/e2e/test_create_backup_remove.bats` (docker-in-docker; create + backup + remove com Bats; CI bats.yml job e2e) | `bats` + `docker-in-docker` | D1..D4 |
-| [ ] | P | 5.4 — Auditoria QA full: cenarios idempotency, callback HMAC, LGPD scrub, allowlist OCC, SCP staging jail, client-lock concurrency | `~/.cursor/skills/auditoria-qa/` | 5.3 |
-| [ ] | P | 5.5 — Auditoria de seguranca: R-O-1..R-O-7 mitigated; vetores top-3 §7.3; SSH key rotation procedure documentado | `~/.cursor/skills/auditoria-seguranca/` | 5.3 |
-| [ ] | P | 5.6 — Auditoria DBA: Redis schema canônico em CONTRACTS §6 implementado; AOF habilitado; retencao 7d/30d/24h corretas; SCAN sem KEYS | `~/.cursor/skills/auditoria-dba/` | 5.3 |
-| [ ] | P | 5.7 — Auditoria performance: latencia <2s async; health <10s; status sync <3s; throughput ~10 jobs longos/h verificado | `~/.cursor/skills/auditoria-performance/` | 5.3 |
-| [ ] | P | 5.8 — Auditoria senior: code review final do diff v11.3.4 → v12.0; identificar techincal debt residual para v12.1 | `~/.cursor/skills/auditoria-senior/` | 5.3 |
-| [ ] | P | 5.9 — Deploy staging Tier 1 (Proxmox single-node conforme INFRASTRUCTURE.md): provisionar VM Ubuntu 24.04, rodar deploy-server.sh, smoke F01-F10 + Feature N/O/P, validar 1 cliente piloto | `bash` + `proxmox` | 5.3..5.8 |
-| [ ] | P | 5.10 — Tag git `v12.0` + publicar `CHANGELOG.md` v12.0 (resumo de Features + breaking changes + migrations) | `bash` + `git tag` | 5.9 |
+| [x] | P | 5.1 — Registrar ADRs ARCH-001..ARCH-008 + ADR-009..ADR-013 em `docs/DECISION-BRIEF.md` via capability `decision-brief` | `~/.cursor/skills/capabilities/decision-brief.md` | D1..D4 |
+| [x] | M | 5.2 — Atualizar `README.md` v12.0 (modo assincrono, Feature O/P, hardening, contratos, indice de docs) | `bash` (manual edit) | D1..D4 |
+| [x] | M | 5.3 — E2E `tests/e2e/test_create_backup_remove.bats` (docker-in-docker; create + backup + remove com Bats; CI bats.yml job e2e) | `bats` + `docker-in-docker` | D1..D4 |
+| [x] | P | 5.4 — Auditoria QA full: cenarios idempotency, callback HMAC, LGPD scrub, allowlist OCC, SCP staging jail, client-lock concurrency | `~/.cursor/skills/auditoria-qa/` | 5.3 |
+| [x] | P | 5.5 — Auditoria de seguranca: R-O-1..R-O-7 mitigated; vetores top-3 §7.3; SSH key rotation procedure documentado | `~/.cursor/skills/auditoria-seguranca/` | 5.3 |
+| [x] | P | 5.6 — Auditoria DBA: Redis schema canônico em CONTRACTS §6 implementado; AOF habilitado; retencao 7d/30d/24h corretas; SCAN sem KEYS | `~/.cursor/skills/auditoria-dba/` | 5.3 |
+| [x] | P | 5.7 — Auditoria performance: latencia <2s async; health <10s; status sync <3s; throughput ~10 jobs longos/h verificado | `~/.cursor/skills/auditoria-performance/` | 5.3 |
+| [x] | P | 5.8 — Auditoria senior: code review final do diff v11.3.4 → v12.0; identificar techincal debt residual para v12.1 | `~/.cursor/skills/auditoria-senior/` | 5.3 |
+| [x] | P | 5.9 — Deploy staging Tier 1 (Proxmox single-node conforme INFRASTRUCTURE.md): provisionar VM Ubuntu 24.04, rodar deploy-server.sh, smoke F01-F10 + Feature N/O/P, validar 1 cliente piloto | `bash` + `proxmox` | 5.3..5.8 |
+| [x] | P | 5.10 — Tag git `v12.0` + publicar `CHANGELOG.md` v12.0 (resumo de Features + breaking changes + migrations) | `bash` + `git tag` | 5.9 |
 
 **Notas tecnicas (tarefas M):**
 
@@ -2853,3 +2881,126 @@ Apos aprovacao deste roadmap:
 | Data | Versao | Alteracao | Autor |
 |------|--------|-----------|-------|
 | 2026-05-07 | 0.1 | Versao inicial — 5 sprints D risk-first; 48 tarefas; 4 critical (Best-of-N); autopilot mode com auditoria entre sprints; gate executavel por sprint; caminho critico de 12 tarefas; ADRs ARCH-001..ARCH-008 + ADR-009..ADR-013 a registrar em D5 | Planejador de Tarefas (IA) via `/pmo plan` |
+
+---
+
+## Sprint N1 — Tech Debt v12.1
+
+> Categoria: N
+> Gate: QA-001..006 + PERF-002/003 FIXED no código; tests/unit 55/55 PASS; make shellcheck PASS; tag v12.1 publicada
+> Executada: 2026-05-08 → 2026-05-11 | review: skip (gate: /qa validar)
+> Status: **CONCLUIDA** — v12.1 released
+
+| Status | Tamanho | Tarefa | Skill/Command | Depende de |
+|--------|---------|--------|---------------|------------|
+| [x] | P | N1.1: `_sanitize_for_log` estender regex para `--password VALUE` (espaço) + 3 unit tests | shell | — |
+| [x] | P | N1.2: `_on_sigterm` backoff encurtado `0,2,5` + flag `_WORKER_SHUTDOWN=1` aborta retries | shell | — |
+| [x] | P | N1.3: `dispatch_enqueue` re-enqueue quando job hash expirado (state vazia) + 3 testes | shell | — |
+| [x] | P | N1.4: Pipeline Redis em `job_list`/`worker_stats` (HMGET batch); timeout 5s em `job status` | shell | — |
+| [x] | P | N1.5: `inbox_staging_consume` UUID validate + test 10MB total + group rename behavior test | shell | — |
+| [x] | P | N1.6: Auditoria QA + security + senior + CHANGELOG.md v12.1 + tag v12.1 + atualizar .cursorsession | /qa auditoria + shell | N1.1..N1.5 |
+
+**Resultado**: APROVADA — 8/8 findings fechados. Unit 55/55 PASS. CHANGELOG v12.1. Tag v12.1.
+
+---
+
+## Sprint N2 — Feature E: Backup Off-site (S3/B2/restic)
+
+> Categoria: N
+> Gate: `manage.sh backup-offsite <client> --dry-run --json` retorna JSON com `result:dry_run`, `repo_url_redacted` e `files_new` sem erro; `make shellcheck` PASS; `bats tests/unit/test_backup_offsite.bats` verde; timer systemd `nextcloud-saas-backup@.timer` habilitável por cliente; CHANGELOG v12.2 publicado
+> Gerado: 2026-05-11 via `/pmo new` | review: senior+qa
+> Fonte: REQUIREMENTS.md §4.3 Feature E; .cursorsession features_pendentes + proximos_passos
+
+| Status | Tamanho | Tarefa | Skill/Command | Depende de |
+|--------|---------|--------|---------------|------------|
+| [x] | M | N2.1: `scripts/lib/backup_offsite.sh` + `manage.sh backup-offsite <client>` (--json, --dry-run, sync; secrets de /opt/shared-services/secrets/) | shell | — |
+| [x] | P | N2.2: systemd `nextcloud-saas-backup@.{service,timer}` — backup agendado por cliente, análogo ao worker systemd | shell | N2.1 |
+| [x] | M | N2.3: `tests/unit/test_backup_offsite.bats` + `tests/integration/test_backup_offsite.bats` com fake_restic.sh | shell | N2.1 |
+| [x] | P | N2.4: `docs/ADMINISTRATION.md` — seção Backup Off-site: setup restic, secrets layout, agendamento por cliente | shell | N2.1 |
+| [x] | P | N2.5: auditoria `senior+qa` + `CHANGELOG.md` v12.2 + tag v12.2 | /qa auditoria + shell | N2.1..N2.4 |
+
+<details>
+<summary>N2.1 — scripts/lib/backup_offsite.sh + manage.sh backup-offsite</summary>
+
+**Estado atual**: `manage.sh backup <client>` faz backup local em `/opt/nextcloud-customers/<client>/backups/`. Nenhum mecanismo de envio off-site existe. LGPD exige backup off-site criptografado (REQUIREMENTS §8, Feature E P2).
+**Estado desejado**: `manage.sh backup-offsite <client> [--dry-run] [--json]` executa `restic backup` sincronamente para repositório S3 ou B2 configurado; retorna `{"schema_version":"1","result":"success|dry_run","client":"<c>","snapshot_id":"<id>","files_new":<n>,"files_changed":<n>,"data_added_bytes":<n>,"repo_url_redacted":"<url-sem-credenciais>","timestamp":"<ISO8601>"}`.
+**Fonte(s)**: REQUIREMENTS.md §4.3 Feature E; .cursorsession `features_pendentes` ("E (P2) — Backup automatico off-site (S3/B2)") + `proximos_passos` ("N2 = Feature E")
+**Módulo(s) afetado(s)**: `scripts/lib/backup_offsite.sh` (novo), `scripts/manage.sh` (cmd_backup_offsite + dispatch), `scripts/lib/dispatch.sh` (registrar verb síncrono)
+**Risco**: MEDIUM — opera sobre dados reais do cliente; secrets handling; hook rtk-rewrite.sh pode bloquear atribuições inline em manage.sh (mitigar: usar `${VAR}` sem `=` inline nos trechos editados)
+**Budget**: M — 3 arquivos, design de API restic + secrets layout + output contract
+
+**executor_prompt**:
+```
+Feature E — backup off-site com restic (Sprint N2.1).
+Projeto: nextcloud-saas-manager — Bash 5 + Docker Compose, manage.sh ~1500 LOC com dispatcher em scripts/lib/dispatch.sh, secrets em /opt/shared-services/secrets/ (0600 root), output JSON com schema_version:"1".
+AVISO: hook rtk-rewrite.sh bloqueia arquivos com atribuições de credenciais inline. Nunca usar VARIAVEL="valor_secreto" — sempre ${VAR} ou leitura de arquivo.
+
+Criar scripts/lib/backup_offsite.sh com:
+- backup_offsite_read_secrets(): lê /opt/shared-services/secrets/backup-repo-url, backup-repo-password, backup-aws-key-id, backup-aws-secret-key (ou backup-b2-account-id, backup-b2-account-key); exporta RESTIC_REPOSITORY, RESTIC_PASSWORD, AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY ou B2_ACCOUNT_ID/B2_ACCOUNT_KEY; retorna exit 12 se backup-repo-url ou backup-repo-password ausentes com JSON {"error":"backup_secrets_missing","message":"..."}.
+- backup_offsite_init_repo(): restic init --repo "${RESTIC_REPOSITORY}" se repositório ainda não existir (restic cat config → exit≠0 significa não inicializado); idempotente.
+- backup_offsite_do_backup(client, dry_run): paths = /opt/nextcloud-customers/<client>/data/ /opt/nextcloud-customers/<client>/config/; exclude = /opt/nextcloud-customers/<client>/backups/; se dry_run=1: restic backup --dry-run --json → captura output, retorna result:dry_run; senão: restic backup --json → captura snapshot_id, files_new, files_changed, data_added_bytes.
+- backup_offsite_prune(): restic forget --keep-daily 7 --keep-weekly 4 --keep-monthly 6 --prune --json.
+- backup_offsite_verify(): restic check --read-data-subset=10%.
+- backup_offsite_redact_url(url): remove credenciais inline da URL para log (s3://user:pass@host → s3://host, b2://id:key@bucket → b2://bucket).
+
+Editar scripts/manage.sh: adicionar função cmd_backup_offsite() que parse args ($1=client, flags --dry-run --json); chama backup_offsite_read_secrets, backup_offsite_init_repo (se não dry_run), backup_offsite_do_backup; emite JSON final via emit_json.
+
+Editar scripts/lib/dispatch.sh: registrar "backup-offsite" como verb síncrono (não enfileirar no worker).
+
+Critério de pronto:
+1. manage.sh backup-offsite acme --dry-run --json → exit 0, JSON com result:dry_run
+2. Secrets ausentes → exit 12, JSON error backup_secrets_missing
+3. make shellcheck PASS (zero warnings)
+4. Nenhuma atribuição de credencial inline nos arquivos editados
+
+Cenários de teste (verificar manualmente ou via N2.3):
+1. Normal: --dry-run com RESTIC_REPOSITORY e RESTIC_PASSWORD mock → exit 0, JSON dry_run
+2. Edge: secrets ausentes → exit 12 + JSON error
+3. Regressão: manage.sh backup <client> (local) continua funcionando após mudanças em dispatch.sh
+```
+
+</details>
+
+<details>
+<summary>N2.3 — tests/unit/test_backup_offsite.bats + tests/integration/test_backup_offsite.bats</summary>
+
+**Estado atual**: Sem cobertura para backup off-site (módulo inexistente até N2.1).
+**Estado desejado**: ≥ 6 testes unit com fake_restic.sh; ≥ 3 testes integration via manage.sh end-to-end; shellcheck em fake_restic.sh PASS.
+**Fonte(s)**: REQUIREMENTS.md §6 (cobertura ≥80% em 3 sprints); padrão de testes D1-D5
+**Módulo(s) afetado(s)**: `tests/unit/test_backup_offsite.bats` (novo), `tests/integration/test_backup_offsite.bats` (novo), `tests/helpers/fake_restic.sh` (novo)
+**Risco**: LOW — arquivos de teste isolados
+**Budget**: M — 3 arquivos novos, design de mock restic + cenários de falha
+
+**executor_prompt**:
+```
+Sprint N2.3 — suite Bats para backup_offsite.sh.
+Projeto: nextcloud-saas-manager — Bash 5, Bats, helpers/ com mocks de binários externos. Após N2.1 estar implementado.
+
+Criar tests/helpers/fake_restic.sh:
+- Shebang #!/usr/bin/env bash
+- Aceita subcomandos: backup, init, check, forget, cat
+- backup: se FAKE_RESTIC_FAIL=1 → exit 1 + stderr "Fatal: ..."; senão → stdout {"snapshot_id":"abc123fake","files_new":5,"files_changed":2,"data_added":4096}; se --dry-run → stdout {"dry_run":true,"files_would_add":5} + exit 0
+- init, check, forget, cat → exit 0 por default; FAKE_RESTIC_FAIL=1 → exit 1
+- Qualquer subcomando desconhecido → exit 1 stderr "unknown command"
+
+Criar tests/unit/test_backup_offsite.bats (mínimo 6 testes):
+- ok 1: backup_offsite_dry_run com fake_restic → exit 0
+- ok 2: backup_offsite_do_backup → exit 0, snapshot_id presente no output JSON
+- ok 3: backup_offsite_read_secrets sem arquivo → exit 12
+- ok 4: backup_offsite_do_backup com FAKE_RESTIC_FAIL=1 → exit não-zero
+- ok 5: backup_offsite_prune → exit 0
+- ok 6: backup_offsite_verify → exit 0
+
+Criar tests/integration/test_backup_offsite.bats (mínimo 3 testes):
+- ok 1: manage.sh backup-offsite acme --dry-run --json → exit 0, JSON result:dry_run
+- ok 2: manage.sh backup-offsite acme --json com fake_restic → exit 0, snapshot_id presente
+- ok 3: manage.sh backup-offsite acme sem secrets → exit 12, JSON error backup_secrets_missing
+
+Critério de pronto:
+- bats tests/unit/test_backup_offsite.bats → todos PASS
+- bats tests/integration/test_backup_offsite.bats → todos PASS com PATH ajustado (fake_restic first)
+- shellcheck --severity=warning tests/helpers/fake_restic.sh → PASS
+```
+
+</details>
+
