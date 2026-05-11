@@ -2913,11 +2913,11 @@ Apos aprovacao deste roadmap:
 
 | Status | Tamanho | Tarefa | Skill/Command | Depende de |
 |--------|---------|--------|---------------|------------|
-| [ ] | M | N2.1: `scripts/lib/backup_offsite.sh` + `manage.sh backup-offsite <client>` (--json, --dry-run, sync; secrets de /opt/shared-services/secrets/) | shell | — |
-| [ ] | P | N2.2: systemd `nextcloud-saas-backup@.{service,timer}` — backup agendado por cliente, análogo ao worker systemd | shell | N2.1 |
-| [ ] | M | N2.3: `tests/unit/test_backup_offsite.bats` + `tests/integration/test_backup_offsite.bats` com fake_restic.sh | shell | N2.1 |
-| [ ] | P | N2.4: `docs/ADMINISTRATION.md` — seção Backup Off-site: setup restic, secrets layout, agendamento por cliente | shell | N2.1 |
-| [ ] | P | N2.5: auditoria `senior+qa` + `CHANGELOG.md` v12.2 + tag v12.2 | /qa auditoria + shell | N2.1..N2.4 |
+| [x] | M | N2.1: `scripts/lib/backup_offsite.sh` + `manage.sh backup-offsite <client>` (--json, --dry-run, sync; secrets de /opt/shared-services/secrets/) | shell | — |
+| [x] | P | N2.2: systemd `nextcloud-saas-backup@.{service,timer}` — backup agendado por cliente, análogo ao worker systemd | shell | N2.1 |
+| [x] | M | N2.3: `tests/unit/test_backup_offsite.bats` + `tests/integration/test_backup_offsite.bats` com fake_restic.sh | shell | N2.1 |
+| [x] | P | N2.4: `docs/ADMINISTRATION.md` — seção Backup Off-site: setup restic, secrets layout, agendamento por cliente | shell | N2.1 |
+| [x] | P | N2.5: auditoria `senior+qa` + `CHANGELOG.md` v12.2 + tag v12.2 | /qa auditoria + shell | N2.1..N2.4 |
 
 <details>
 <summary>N2.1 — scripts/lib/backup_offsite.sh + manage.sh backup-offsite</summary>
