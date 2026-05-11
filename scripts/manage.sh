@@ -38,6 +38,8 @@ source "${MANAGE_SCRIPT_DIR}/lib/feature_o_ext.sh"
 source "${MANAGE_SCRIPT_DIR}/lib/occ_bridge.sh"
 # shellcheck source=scripts/lib/health_checks.sh
 source "${MANAGE_SCRIPT_DIR}/lib/health_checks.sh"
+# shellcheck source=scripts/lib/backup_offsite.sh
+source "${MANAGE_SCRIPT_DIR}/lib/backup_offsite.sh"
 
 # ============================================================
 # CONFIGURAÇÃO GLOBAL
@@ -602,6 +604,62 @@ cmd_occ_exec() {
 }
 
 # ============================================================
+# COMANDO: BACKUP-OFFSITE (Feature E — Sprint N2)
+# ============================================================
+cmd_backup_offsite() {
+    local CLIENT_NAME="$1"
+
+    if [ ! -d "${BASE_DIR}/${CLIENT_NAME}" ]; then
+        if [[ "${PARSED_FLAGS[json]:-}" == "1" ]]; then
+            emit_error "client_not_found" "instancia '${CLIENT_NAME}' nao encontrada"
+        else
+            log_error "Instância '${CLIENT_NAME}' não encontrada!"
+        fi
+        return 1
+    fi
+
+    local is_dry_run="${PARSED_FLAGS[dry_run]:-}"
+    local is_json="${PARSED_FLAGS[json]:-}"
+
+    # Carregar secrets — exit 12 se ausentes
+    if ! backup_offsite_read_secrets; then
+        return 12
+    fi
+
+    if [[ "$is_dry_run" == "1" ]]; then
+        if [[ "$is_json" != "1" ]]; then
+            log_info "Dry-run: verificando repositório restic sem fazer backup..."
+        fi
+        backup_offsite_do_backup "$CLIENT_NAME" "1"
+        return $?
+    fi
+
+    # Backup real
+    if [[ "$is_json" != "1" ]]; then
+        log_info "Iniciando backup off-site de '${CLIENT_NAME}'..."
+    fi
+
+    # Inicializar repositório se necessário
+    if ! backup_offsite_init_repo; then
+        if [[ "$is_json" == "1" ]]; then
+            emit_error "backup_init_failed" "falha ao inicializar repositório restic"
+        else
+            log_error "Falha ao inicializar repositório restic"
+        fi
+        return 1
+    fi
+
+    backup_offsite_do_backup "$CLIENT_NAME" "0"
+    local exit_code=$?
+
+    if [[ $exit_code -eq 0 && "$is_json" != "1" ]]; then
+        log_success "Backup off-site de '${CLIENT_NAME}' concluído"
+    fi
+
+    return $exit_code
+}
+
+# ============================================================
 # COMANDO: HEALTH (Feature C/D4)
 # ============================================================
 cmd_health() {
@@ -1085,7 +1143,7 @@ case "$TOKEN0" in
                     fi
                     dispatch_legacy_cmd "$CLIENT_NAME" "$DOMAIN_OR_PLACEHOLDER" "create" "${POSITIONAL[@]:3}"
                     ;;
-                status|credentials|backup|restore|stop|start|update)
+                status|credentials|backup|backup-offsite|restore|stop|start|update)
                     dispatch_legacy_cmd "$CLIENT_NAME" "$DOMAIN_OR_PLACEHOLDER" "$COMMAND" "${POSITIONAL[@]:3}"
                     ;;
                 backup-then-remove)
