@@ -122,7 +122,8 @@ update_collabora_allowlist() {
     done
 
     if [ -n "$domains" ]; then
-        sed -i "s|^COLLABORA_ALLOWLIST=.*|COLLABORA_ALLOWLIST=${domains}|" "${shared_dir}/.env"
+        local escaped_domains="${domains//|/\\|}"
+        sed -i "s|^COLLABORA_ALLOWLIST=.*|COLLABORA_ALLOWLIST=${escaped_domains}|" "${shared_dir}/.env"
         cd "${shared_dir}" || exit 1
         $DC up -d collabora
         log_success "Collabora allowlist atualizado: $domains"
