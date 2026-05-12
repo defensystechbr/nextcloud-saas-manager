@@ -94,6 +94,15 @@ cmd_create() {
 
     load_shared_config
 
+    # Ensure the harp key file exists (legacy installs store only the plain value)
+    local _harp_key_file="${HARP_SHARED_KEY_FILE:-${SHARED_DIR}/secrets/harp_shared_key}"
+    if [ ! -f "$_harp_key_file" ] && [ -n "${HARP_SHARED_KEY:-}" ]; then
+        install -d -m 0700 "$(dirname "$_harp_key_file")"
+        printf '%s' "${HARP_SHARED_KEY}" > "$_harp_key_file"
+        chmod 600 "$_harp_key_file"
+    fi
+    HARP_SHARED_KEY_FILE="$_harp_key_file"
+
     log_info "Verificando DNS..."
     local resolved_ip
     resolved_ip=$(dig +short "$DOMAIN" 2>/dev/null | tail -1)
@@ -181,8 +190,10 @@ services:
     restart: always
     environment:
       - DOCKER_HOST=tcp://shared-socket-proxy:2375
+      - HP_SHARED_KEY_FILE=/run/secrets/hp_shared_key
     volumes:
       - ./harp-certs:/certs
+      - ${HARP_SHARED_KEY_FILE:-/opt/shared-services/secrets/harp_shared_key}:/run/secrets/hp_shared_key:ro
     networks:
       - shared
 
@@ -700,22 +711,49 @@ cmd_upgrade_harp() {
         return 1
     fi
 
-    python3 - "$compose_file" <<'PY'
+    local _key_file="${HARP_SHARED_KEY_FILE:-${SHARED_DIR}/secrets/harp_shared_key}"
+    python3 - "$compose_file" "$_key_file" <<'PY'
 from pathlib import Path
 import sys
 
-path = Path(sys.argv[1])
+path   = Path(sys.argv[1])
+key_file = sys.argv[2]
 text = path.read_text()
+
+# Remove legacy docker socket mount
 text = text.replace("      - /var/run/docker.sock:/var/run/docker.sock\n", "")
-marker = "    restart: always\n"
-replacement = "    restart: always\n    environment:\n      - DOCKER_HOST=tcp://shared-socket-proxy:2375\n"
-if "container_name:" in text and "DOCKER_HOST=tcp://shared-socket-proxy:2375" not in text:
-    # Apply only to the harp service block by splitting around its service key.
-    before, sep, after = text.partition("  harp:\n")
-    if sep:
-        block, tail_sep, tail = after.partition("\n\nnetworks:")
-        block = block.replace(marker, replacement, 1)
-        text = before + sep + block + tail_sep + tail
+
+before, sep, after = text.partition("  harp:\n")
+if sep:
+    block, tail_sep, tail = after.partition("\n\nnetworks:")
+
+    # Inject DOCKER_HOST if missing
+    if "DOCKER_HOST=tcp://shared-socket-proxy:2375" not in block:
+        block = block.replace(
+            "    restart: always\n",
+            "    restart: always\n    environment:\n      - DOCKER_HOST=tcp://shared-socket-proxy:2375\n",
+            1,
+        )
+
+    # Inject HP_SHARED_KEY_FILE if missing
+    if "HP_SHARED_KEY_FILE" not in block:
+        block = block.replace(
+            "      - DOCKER_HOST=tcp://shared-socket-proxy:2375\n",
+            "      - DOCKER_HOST=tcp://shared-socket-proxy:2375\n      - HP_SHARED_KEY_FILE=/run/secrets/hp_shared_key\n",
+            1,
+        )
+
+    # Inject key file volume mount if missing
+    vol_line = f"      - {key_file}:/run/secrets/hp_shared_key:ro\n"
+    if "/run/secrets/hp_shared_key" not in block:
+        block = block.replace(
+            "      - ./harp-certs:/certs\n",
+            f"      - ./harp-certs:/certs\n{vol_line}",
+            1,
+        )
+
+    text = before + sep + block + tail_sep + tail
+
 path.write_text(text)
 PY
 
