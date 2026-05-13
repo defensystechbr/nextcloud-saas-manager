@@ -152,11 +152,13 @@ services:
       - MYSQL_HOST=shared-db
       - MYSQL_DATABASE=${MYSQL_DATABASE}
       - MYSQL_USER=${MYSQL_USER}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD}
       - NEXTCLOUD_ADMIN_USER=admin
       - NEXTCLOUD_ADMIN_PASSWORD=${NEXTCLOUD_ADMIN_PASSWORD}
       - NEXTCLOUD_TRUSTED_DOMAINS=${DOMAIN}
       - REDIS_HOST=shared-redis
       - REDIS_HOST_PORT=6379
+      - REDIS_HOST_PASSWORD=${REDIS_PASSWORD}
       - OVERWRITEPROTOCOL=https
       - OVERWRITECLIURL=https://${DOMAIN}
       - TRUSTED_PROXIES=172.16.0.0/12 192.168.0.0/16 10.0.0.0/8
@@ -191,6 +193,7 @@ services:
     environment:
       - DOCKER_HOST=tcp://shared-socket-proxy:2375
       - HP_SHARED_KEY_FILE=/run/secrets/hp_shared_key
+      - NC_INSTANCE_URL=https://${DOMAIN}
     volumes:
       - ./harp-certs:/certs
       - ${HARP_SHARED_KEY_FILE:-/opt/shared-services/secrets/harp_shared_key}:/run/secrets/hp_shared_key:ro
@@ -735,11 +738,14 @@ if sep:
             1,
         )
 
-    # Inject HP_SHARED_KEY_FILE if missing
+    # Inject HP_SHARED_KEY_FILE and NC_INSTANCE_URL if missing
     if "HP_SHARED_KEY_FILE" not in block:
+        import re as _re
+        _nc_m = _re.search(r"OVERWRITECLIURL=(https://[^\\n]+)", text)
+        nc_url_line = (f"      - NC_INSTANCE_URL={_nc_m.group(1).strip()}\\n") if _nc_m else ""
         block = block.replace(
             "      - DOCKER_HOST=tcp://shared-socket-proxy:2375\n",
-            "      - DOCKER_HOST=tcp://shared-socket-proxy:2375\n      - HP_SHARED_KEY_FILE=/run/secrets/hp_shared_key\n",
+            f"      - DOCKER_HOST=tcp://shared-socket-proxy:2375\n      - HP_SHARED_KEY_FILE=/run/secrets/hp_shared_key\n{nc_url_line}",
             1,
         )
 
