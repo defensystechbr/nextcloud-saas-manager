@@ -570,7 +570,7 @@ process_job() {
   ) &
   local renew_pid=$!
   # shellcheck disable=SC2064
-  trap "kill $renew_pid 2>/dev/null; client_lock_release '${client}'" RETURN
+  trap "kill $renew_pid 2>/dev/null || true; client_lock_release '${client}'" RETURN
 
   # Feature O: dispatch direto sem re-chamar nextcloud-manage
   local exit_code=0
