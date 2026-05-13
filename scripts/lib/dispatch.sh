@@ -251,6 +251,11 @@ dispatch_legacy_cmd() {
 
     # Construir args_json para o job
     local -a job_argv=("nextcloud-manage" "$client" "$domain_or_placeholder" "$cmd" "${extra_args[@]+"${extra_args[@]}"}")
+    # D3.6: remove async sempre carrega --force para o worker poder executar sem re-confirmar.
+    # A confirmação já foi validada por _cmd_remove_validate_confirm antes do enqueue.
+    if [[ "$cmd" == "remove" ]]; then
+      job_argv+=("--force")
+    fi
     local args_json
     args_json="$(printf '%s\n' "${job_argv[@]}" | jq -Rc '[.,inputs]')"
 
