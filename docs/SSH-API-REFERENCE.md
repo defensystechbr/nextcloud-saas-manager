@@ -8,19 +8,32 @@
 
 ## 1. Visão Geral da Arquitetura
 
+### Fluxo completo com o shim
+
 ```
 REST API (seu projeto)
     │
-    │  SSH (root@177.104.164.187)
+    │  SSH como usuário ncsaas-api (chave Ed25519)
     ▼
-nextcloud-manage <args> [--json] [--async] [flags globais]
-    │
-    ├── Modo síncrono  → executa e retorna resultado imediatamente
-    └── Modo assíncrono → enfileira no Redis (DB 16) → retorna job_id
-             │
-             └── Worker daemon (systemd: nextcloud-saas-worker)
-                  processa jobs em background
-                  grava logs em /opt/nextcloud-customers/jobs/<job_id>/output.log
+┌─────────────────────────────────────────────────────────────┐
+│ Servidor 177.104.164.187                                     │
+│                                                             │
+│  sshd (ForceCommand)                                        │
+│    └─► /usr/local/bin/ncsaas-api-shim   ← portão de segurança
+│              │  valida, audita, rejeita injeção             │
+│              │                                              │
+│              └─► sudo -n nextcloud-manage <args>            │
+│                        │                                    │
+│              ┌─────────┴─────────┐                          │
+│              │                   │                          │
+│         Modo síncrono      Modo --async                     │
+│         executa agora       enfileira no Redis DB 16        │
+│         retorna resultado   retorna { job_id }              │
+│                                   │                         │
+│                     Worker daemon (systemd)                  │
+│                     processa jobs em background              │
+│                     logs em /opt/nextcloud-customers/jobs/   │
+└─────────────────────────────────────────────────────────────┘
 ```
 
 ### Infraestrutura no servidor
@@ -29,11 +42,179 @@ nextcloud-manage <args> [--json] [--async] [flags globais]
 |---|---|
 | Script principal | `/opt/nextcloud-customers/scripts/manage.sh` |
 | Symlink de invocação | `/usr/local/bin/nextcloud-manage` |
+| **Shim SSH** | `/usr/local/bin/ncsaas-api-shim` |
+| Usuário SSH da API | `ncsaas-api` (sistema, sem shell) |
+| Config sshd | `/etc/ssh/sshd_config.d/50-ncsaas-api.conf` |
+| Regra sudo | `/etc/sudoers.d/ncsaas-api` |
 | Libs | `/opt/nextcloud-customers/scripts/lib/` |
 | Diretório dos tenants | `/opt/nextcloud-customers/<client>/` |
 | Logs dos jobs | `/opt/nextcloud-customers/jobs/<job_id>/output.log` |
 | Fila Redis | `redis DB 16`, prefixo `nc:` |
 | Serviços compartilhados | `/opt/shared-services/` |
+
+---
+
+## 1.5 O `ncsaas-api-shim` — Portão de Segurança SSH
+
+### O que é
+
+O `ncsaas-api-shim` é o único programa que o usuário `ncsaas-api` pode executar no servidor.
+Ele fica entre a sua API REST e o `nextcloud-manage`, garantindo que nenhum comando arbitrário
+possa ser executado mesmo que a chave SSH seja comprometida.
+
+Sem ele, qualquer pessoa com a chave SSH teria um shell root completo no servidor. Com ele, só
+é possível chamar `nextcloud-manage` com verbos da allowlist.
+
+### Arquitetura de três camadas
+
+```
+Camada 1 — authorized_keys
+  command="/usr/local/bin/ncsaas-api-shim",no-pty,...
+  → SSH já redireciona QUALQUER tentativa de login para o shim
+  → Mesmo que o sshd falhe em aplicar ForceCommand, a chave bloqueia
+
+Camada 2 — sshd ForceCommand (/etc/ssh/sshd_config.d/50-ncsaas-api.conf)
+  ForceCommand /usr/local/bin/ncsaas-api-shim
+  → Reforço redundante: mesmo sem command= no authorized_keys, sshd força o shim
+
+Camada 3 — sudo restrito (/etc/sudoers.d/ncsaas-api)
+  ncsaas-api ALL=(root) NOPASSWD: /usr/local/bin/nextcloud-manage
+  → O shim só consegue elevar para root chamando ESTE binário
+  → Qualquer outro sudo retorna "not allowed"
+```
+
+### O que o shim faz em ordem
+
+```
+1. Captura SSH_ORIGINAL_COMMAND (o que sua API enviou)
+2. Sanitiza para log (mascara --password=VALUE → --password=***)
+3. Grava audit log NDJSON no journald (tag: ncsaas-api-ssh)
+4. Valida segurança — rejeita se:
+   a. Comando vazio             → exit 100 (tentativa de shell interativo)
+   b. Metacaracteres de shell   → exit 100 (tentativa de injeção: ; | & $ ` \)
+   c. argv[0] ≠ nextcloud-manage → exit 101
+   d. --password em argumentos  → exit 5   (senha deve ir por stdin)
+   e. -- como primeiro argumento → exit 100 (bypass de allowlist)
+   f. Verbo/cmd não na allowlist → exit 101
+5. Grava "accept" no audit log
+6. exec sudo -n nextcloud-manage <args>  ← nunca volta ao shim
+```
+
+### Verbos permitidos pelo shim
+
+**Top-level (sem client):**
+```
+list, shared-status, worker, job, health, upgrade-harp
+```
+
+**Legacy posicional** (`<client> <domain> <cmd>`):
+```
+create, backup, restore, stop, start, update, remove, status, credentials
+```
+
+**Namespaces** (`<client> <namespace> <verb>`):
+```
+user   → create, remove, modify
+group  → create, remove, modify
+apps   → enable, disable
+occ-exec → subcmd validado internamente pelo script
+```
+
+Qualquer outro verbo retorna:
+```json
+{"error":"cmd_not_allowed","cmd":"<tentativa>"}
+```
+
+### Como invocar via SSH usando o shim
+
+**Antes (direto como root — sem shim):**
+```bash
+ssh root@177.104.164.187 "nextcloud-manage empresa _ status --json"
+```
+
+**Agora (via usuário ncsaas-api + shim — recomendado para a API):**
+```bash
+ssh ncsaas-api@177.104.164.187 "nextcloud-manage empresa _ status --json"
+```
+
+O comando que sua API envia é exatamente o mesmo. A diferença é o usuário SSH e o nível de
+segurança no servidor.
+
+### Como instalar no servidor
+
+```bash
+# 1. Criar usuário sem shell
+useradd -r -m -d /home/ncsaas-api -s /usr/sbin/nologin ncsaas-api
+
+# 2. Criar authorized_keys com a chave pública da sua API
+install -d -m 0700 -o ncsaas-api -g ncsaas-api /home/ncsaas-api/.ssh
+echo 'command="/usr/local/bin/ncsaas-api-shim",no-pty,no-port-forwarding,no-X11-forwarding,no-agent-forwarding,no-user-rc ssh-ed25519 AAAA...chave... api-prod-2026' \
+  > /home/ncsaas-api/.ssh/authorized_keys
+chmod 600 /home/ncsaas-api/.ssh/authorized_keys
+
+# 3. Instalar configuração sshd
+cp ssh/50-ncsaas-api.sshd.conf /etc/ssh/sshd_config.d/50-ncsaas-api.conf
+systemctl reload ssh
+
+# 4. Instalar sudoers
+cp ssh/ncsaas-api.sudoers /etc/sudoers.d/ncsaas-api
+chmod 0440 /etc/sudoers.d/ncsaas-api
+visudo -c  # validar antes de usar
+
+# 5. Instalar o shim
+cp scripts/ncsaas-api-shim /usr/local/bin/ncsaas-api-shim
+chmod 755 /usr/local/bin/ncsaas-api-shim
+```
+
+### Audit log — como monitorar
+
+Toda invocação gera uma linha NDJSON no journald:
+
+```bash
+# Ver em tempo real
+journalctl -t ncsaas-api-ssh -f
+
+# Filtrar rejeições
+journalctl -t ncsaas-api-ssh -o json | jq 'select(.MESSAGE | contains("reject"))'
+```
+
+Formato de cada linha:
+```json
+{"event":"invoke",  "key_id":"SHA256:abc...", "client_ip":"203.0.113.5", "command":"nextcloud-manage empresa _ status --json"}
+{"event":"accept",  "key_id":"SHA256:abc...", "client_ip":"203.0.113.5", "command":"nextcloud-manage empresa _ status --json"}
+{"event":"reject",  "reason":"metachar",      "key_id":"SHA256:abc...", "client_ip":"203.0.113.5", "command":"nextcloud-manage empresa _ status; rm -rf /"}
+```
+
+O campo `key_id` é o fingerprint SHA256 da chave SSH usada. Use-o para rotação de chaves —
+confirme no log que a chave antiga parou de aparecer antes de removê-la do `authorized_keys`.
+
+### Rotação de chave SSH
+
+```bash
+# 1. Adicionar nova chave (mantém a antiga ativa durante a transição)
+echo 'command="...",no-pty,... ssh-ed25519 AAAA...nova-chave... api-prod-2027' \
+  >> /home/ncsaas-api/.ssh/authorized_keys
+
+# 2. Atualizar a API para usar a nova chave
+# 3. Confirmar no journald que a chave antiga parou de aparecer
+journalctl -t ncsaas-api-ssh | grep "SHA256:fingerprint-da-chave-antiga"
+
+# 4. Remover a linha da chave antiga do authorized_keys
+```
+
+### Configurações de segurança do sshd aplicadas
+
+| Diretiva | Valor | Por que |
+|---|---|---|
+| `ForceCommand` | `ncsaas-api-shim` | Impede shell mesmo com chave válida |
+| `PermitTTY` | `no` | Sem shell interativo |
+| `AllowTcpForwarding` | `no` | Sem tunelamento de portas |
+| `PermitTunnel` | `no` | Sem VPN via SSH |
+| `AllowAgentForwarding` | `no` | Sem encadeamento de chaves |
+| `PasswordAuthentication` | `no` | Só chave pública |
+| `MaxSessions` | `4` | Limita paralelismo |
+| `LoginGraceTime` | `15s` | Defesa contra lentidão proposital |
+| `ClientAliveInterval` | `30s` | Detecta conexões penduradas |
 
 ---
 
