@@ -356,7 +356,47 @@ docker exec -u www-data acme-app php occ app_api:daemon:unregister harp_install 
 # (procure por 'app_api:daemon:register' em scripts/manage.sh).
 ```
 
-> **Nota de segurança:** montar `/var/run/docker.sock` no container `harp` concede a esse container privilégios equivalentes a root no host (qualquer processo dentro do container pode criar containers privilegiados, montar o filesystem do host etc.). O mount **precisa ser RW** — o daemon AppAPI usa o socket para criar, iniciar, parar e remover containers de ExApps; trocar para `:ro` faz o problema voltar. Mitigações adotadas: o container HaRP roda apenas a imagem oficial do AppAPI da Nextcloud GmbH, fica em uma rede Docker dedicada (não exposta diretamente à internet, apenas via Traefik) e não aceita código arbitrário do usuário. Apenas administradores do Nextcloud com permissão de instalar ExApps têm acesso indireto ao daemon.
+> **Nota de segurança (v12.0):** instâncias novas não montam mais `/var/run/docker.sock` diretamente no HaRP. O daemon usa `DOCKER_HOST=tcp://shared-socket-proxy:2375`; migre instâncias antigas com `nextcloud-manage upgrade-harp <cliente>`. Se o AppAPI falhar após a migração, verifique primeiro `docker logs shared-socket-proxy` procurando `access denied`, pois a allowlist pode estar bloqueando um endpoint exigido por uma versão nova do HaRP.
+
+### 5. Diagnóstico do socket-proxy
+
+```bash
+docker ps --filter name=shared-socket-proxy
+docker logs shared-socket-proxy --tail 100
+docker exec acme-harp env | grep DOCKER_HOST
+nextcloud-manage health --json | jq '.checks[] | select(.name=="harp_socket_proxy")'
+```
+
+Correções comuns:
+- `shared-socket-proxy` ausente: subir `shared-services/docker-compose.yml` atualizado.
+- `DOCKER_HOST` ausente no HaRP: rodar `nextcloud-manage upgrade-harp acme`.
+- Erro `access denied`: revisar a allowlist do socket-proxy antes de relaxar permissões.
+
+---
+
+## Problema: OCC exec falha
+
+**Sintomas:** `nextcloud-manage acme occ-exec ... --json` retorna erro `occ_command_not_allowed`, `client_busy_async_job_running`, `instance_not_running`, `occ_timeout` ou `occ_command_failed`.
+
+```bash
+# Ver allowlist/bloqueio
+nextcloud-manage acme occ-exec user:list --json
+nextcloud-manage acme occ-exec app:enable calendar --json
+
+# Ver lock concorrente
+nextcloud-manage worker status --json
+redis-cli -n 16 GET nc:client_lock:acme
+
+# Ver auditoria OCC
+journalctl -t nextcloud-saas-occ-exec -o json --since "15 minutes ago"
+```
+
+Interpretação rápida:
+- `occ_command_not_allowed`: subcomando fora da allowlist contratual.
+- `client_busy_async_job_running` / exit `17`: há worker async mutando o mesmo cliente; aguarde o job terminar.
+- `instance_not_running`: container `<cliente>-app` não está em execução.
+- `occ_timeout`: comando excedeu `WORKER_OCC_TIMEOUT_SEC` (60s por padrão).
+- `payload_stdin_required`: senha deve ser enviada por JSON em stdin, nunca em argv.
 
 ---
 

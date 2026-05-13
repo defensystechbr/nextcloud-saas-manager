@@ -1,0 +1,152 @@
+name: bats
+
+on:
+  push:
+    branches: [main, development]
+    paths:
+      - "scripts/**"
+      - "tests/**"
+      - ".github/workflows/bats.yml"
+  pull_request:
+    branches: [main, development]
+    paths:
+      - "scripts/**"
+      - "tests/**"
+      - ".github/workflows/bats.yml"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+env:
+  # ARCHITECTURE.md §2: Bats 1.10+ (apt-get em CI; npm i -g bats evitado).
+  BATS_VERSION: "1.10.0"
+  BATS_LIB_PATH: "/usr/lib/bats"
+
+jobs:
+  unit:
+    name: Bats unit (lib/*.sh isolados)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Bats + helpers
+        run: |
+          set -eu
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            bats \
+            jq \
+            shellcheck \
+            redis-tools \
+            uuid-runtime \
+            openssl
+          sudo mkdir -p "$BATS_LIB_PATH"
+          sudo git clone --depth=1 https://github.com/bats-core/bats-support.git "$BATS_LIB_PATH/bats-support"
+          sudo git clone --depth=1 https://github.com/bats-core/bats-assert.git "$BATS_LIB_PATH/bats-assert"
+          bats --version
+
+      - name: Run unit tests
+        if: hashFiles('tests/unit/**/*.bats') != ''
+        env:
+          BATS_LIB_PATH: ${{ env.BATS_LIB_PATH }}
+        run: bats --tap --recursive tests/unit
+
+      - name: No unit tests yet
+        if: hashFiles('tests/unit/**/*.bats') == ''
+        run: |
+          echo "::warning::tests/unit/ vazio — aguardando módulo tests-bats (Sprint S1)."
+          exit 0
+
+  integration:
+    name: Bats integration (manage.sh + Redis ephemeral)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    services:
+      redis:
+        # Mesma versão usada em produção (shared-redis: redis:alpine, ARCHITECTURE §2).
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+    env:
+      WORKER_REDIS_HOST: 127.0.0.1
+      WORKER_REDIS_PORT: 6379
+      WORKER_REDIS_DB: 16
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Bats + helpers + tools
+        run: |
+          set -eu
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            bats \
+            jq \
+            redis-tools \
+            uuid-runtime \
+            openssl \
+            curl
+          sudo mkdir -p "$BATS_LIB_PATH"
+          sudo git clone --depth=1 https://github.com/bats-core/bats-support.git "$BATS_LIB_PATH/bats-support"
+          sudo git clone --depth=1 https://github.com/bats-core/bats-assert.git "$BATS_LIB_PATH/bats-assert"
+
+      - name: Sanity check Redis service
+        run: |
+          redis-cli -h 127.0.0.1 -p 6379 ping
+          redis-cli -h 127.0.0.1 -p 6379 -n 16 set ci:probe "$(date -u +%FT%TZ)"
+          redis-cli -h 127.0.0.1 -p 6379 -n 16 get ci:probe
+
+      - name: Run integration tests
+        if: hashFiles('tests/integration/**/*.bats') != ''
+        env:
+          BATS_LIB_PATH: ${{ env.BATS_LIB_PATH }}
+        run: bats --tap --recursive tests/integration
+
+      - name: No integration tests yet
+        if: hashFiles('tests/integration/**/*.bats') == ''
+        run: |
+          echo "::warning::tests/integration/ vazio — aguardando módulo tests-bats (Sprint S1)."
+          exit 0
+
+  e2e:
+    name: Bats e2e (create backup remove)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Bats + tools
+        run: |
+          set -eu
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            bats \
+            jq \
+            shellcheck \
+            redis-tools \
+            uuid-runtime \
+            openssl
+          sudo mkdir -p "$BATS_LIB_PATH"
+          sudo git clone --depth=1 https://github.com/bats-core/bats-support.git "$BATS_LIB_PATH/bats-support"
+          sudo git clone --depth=1 https://github.com/bats-core/bats-assert.git "$BATS_LIB_PATH/bats-assert"
+
+      - name: Run e2e tests
+        if: hashFiles('tests/e2e/**/*.bats') != ''
+        env:
+          BATS_LIB_PATH: ${{ env.BATS_LIB_PATH }}
+        run: bats --tap --recursive tests/e2e
+
+      - name: No e2e tests yet
+        if: hashFiles('tests/e2e/**/*.bats') == ''
+        run: |
+          echo "::warning::tests/e2e/ vazio — aguardando gate D5.3."
+          exit 0
