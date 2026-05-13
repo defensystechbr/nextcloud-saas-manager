@@ -124,8 +124,8 @@ update_collabora_allowlist() {
     if [ -n "$domains" ]; then
         local escaped_domains="${domains//|/\\|}"
         sed -i "s|^COLLABORA_ALLOWLIST=.*|COLLABORA_ALLOWLIST=\"${escaped_domains}\"|" "${shared_dir}/.env"
-        cd "${shared_dir}" || exit 1
-        $DC up -d collabora
+        cd "${shared_dir}" || return 1
+        $DC up -d collabora 2>&1 || log_warning "Falha ao reiniciar Collabora — allowlist no .env atualizado mas serviço não reiniciado"
         log_success "Collabora allowlist atualizado: $domains"
     fi
 }
@@ -204,8 +204,8 @@ secret = ${TURN_SECRET}
 servers = turn:${TURN_DOMAIN}:3478?transport=udp,turn:${TURN_DOMAIN}:3478?transport=tcp
 SIGCONF_EOF
 
-    cd "${shared_dir}" || exit 1
-    $DC restart signaling
+    cd "${shared_dir}" || return 1
+    $DC restart signaling 2>&1 || log_warning "Falha ao reiniciar Signaling — config atualizada mas serviço não reiniciado"
     log_success "Signaling backends atualizado (${count} backends)"
 }
 
@@ -291,7 +291,7 @@ driverPath = /usr/bin/geckodriver
 browserPath = /usr/bin/firefox
 RECCONF_EOF
 
-    cd "${shared_dir}" || exit 1
+    cd "${shared_dir}" || return 1
     $DC restart recording 2>/dev/null || true
     log_success "Recording backends atualizado (${count} backends)"
 }
