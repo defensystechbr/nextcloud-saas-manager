@@ -253,8 +253,13 @@ CRED_EOF
 
     local APPS="richdocuments calendar contacts mail deck forms notes tasks groupfolders photos activity spreed app_api notify_push"
     for app in $APPS; do
-        local install_attempts=0
-        while ! run_occ "$APP" app:install "$app" 2>/dev/null && [ $install_attempts -lt 3 ]; do
+        local install_attempts=0 _install_rc=0 _install_out=""
+        while [ $install_attempts -lt 3 ]; do
+            _install_rc=0
+            _install_out="$(run_occ "$APP" app:install "$app" 2>&1)" || _install_rc=$?
+            echo "$_install_out"
+            # Sair do loop se instalou com sucesso OU se já estava instalado
+            [[ $_install_rc -eq 0 || "$_install_out" == *"already installed"* ]] && break
             install_attempts=$((install_attempts + 1))
             sleep 5
         done
