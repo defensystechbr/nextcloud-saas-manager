@@ -9,6 +9,8 @@ Documentation=file:/opt/nextcloud-customers/docs/ARCHITECTURE.md
 After=docker.service network-online.target
 Wants=network-online.target
 Requires=docker.service
+StartLimitIntervalSec=300
+StartLimitBurst=10
 
 [Service]
 Type=simple
@@ -16,8 +18,7 @@ User=root
 Group=root
 WorkingDirectory=/opt/nextcloud-saas-worker
 EnvironmentFile=/opt/nextcloud-saas-worker/.env
-# WORKER_CALLBACK_SECRET vem de /run/secrets via LoadCredential.
-# O worker lê com `cat ${CREDENTIALS_DIRECTORY}/callback_secret`.
+# WORKER_CALLBACK_SECRET via LoadCredential (gerado por setup-worker.sh).
 LoadCredential=callback_secret:/opt/shared-services/secrets/worker_callback_secret
 
 ExecStart=/bin/bash /opt/nextcloud-customers/scripts/worker.sh
@@ -26,8 +27,6 @@ ExecStop=/bin/kill -TERM $MAINPID
 # ─── Resiliência ──────────────────────────────────────────────────────────
 Restart=on-failure
 RestartSec=5
-StartLimitIntervalSec=300
-StartLimitBurst=10
 WatchdogSec=120
 NotifyAccess=main
 
