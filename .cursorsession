@@ -18,7 +18,7 @@
   "fase_nome": "Sprint N2 — CONCLUIDA — v12.2 released",
   "usuarios_alvo": "Time DevOps interno operando servidor Ubuntu 24.04 com multiplas instancias Nextcloud SaaS, e API REST consumidora (em outro repo) que invoca via SSH",
   "prazo": null,
-  "ultimo_update": "2026-05-08T21:23:53-03:00",
+  "ultimo_update": "2026-05-13T03:58:53Z",
   "perfil_usuario": "tecnico",
   "principal_preocupacao": "Habilitar consumo do manage.sh por API REST externa via SSH com modo assincrono (fila + worker) sem bloquear a API durante operacoes longas; manter base Bash + Docker Compose intacta",
   "modulos": [
@@ -269,8 +269,10 @@
     "ARCH-012",
     "ARCH-013"
   ],
-  "sprint_atual": "N2",
-  "checkpoint": null,
+  "sprint_atual": null,
+  "checkpoint": {
+    "phase": "merged"
+  },
   "comandos_recentes": [
     "/pmo new",
     "/pmo fix",
@@ -675,5 +677,6 @@
   "beesy_version": "4.16.18-beta",
   "decisions_applied_until": 178,
   "strategic_context_captured_at": "2026-05-08T19:30:00-03:00",
-  "pending_action": "Sprint N2 CONCLUIDA (v12.2 tag). Proximo: /pmo new para N3 (Feature F: Loki+Prometheus+Grafana)."
+  "pending_action": "Sprint N2 CONCLUIDA (v12.2 tag). Proximo: /pmo new para N3 (Feature F: Loki+Prometheus+Grafana).",
+  "previous_sprint": "N2"
 }
