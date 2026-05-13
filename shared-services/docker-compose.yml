@@ -177,5 +177,6 @@ volumes:
 networks:
   shared:
     name: shared
+    external: true
   proxy:
     external: true
