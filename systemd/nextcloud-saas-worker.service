@@ -28,7 +28,7 @@ ExecStop=/bin/kill -TERM $MAINPID
 Restart=on-failure
 RestartSec=5
 WatchdogSec=120
-NotifyAccess=main
+NotifyAccess=all
 
 # ─── Hardening (defesa em profundidade — worker precisa de root para docker.sock) ──
 NoNewPrivileges=false
