@@ -963,7 +963,7 @@ cmd_job_status() {
 
 cmd_job_logs() {
     local job_id="${1:?cmd_job_logs: job_id obrigatorio}"
-    local log_dir="${WORKER_JOBS_DIR:-/opt/nextcloud-saas/jobs}"
+    local log_dir="${WORKER_JOBS_DIR:-/opt/nextcloud-customers/jobs}"
     local log_file="${log_dir}/${job_id}/output.log"
 
     if [[ ! -f "$log_file" ]]; then

@@ -80,7 +80,7 @@ cmd_create_post_extended() {
       local job_id="${CURRENT_JOB_ID:-}"
       if [[ -n "$job_id" ]]; then
         inbox_staging_consume "$staging_id" "$job_id" "$inbox_dir" \
-          "${WORKER_JOBS_DIR:-/opt/nextcloud-saas/jobs}" 2>/dev/null || true
+          "${WORKER_JOBS_DIR:-/opt/nextcloud-customers/jobs}" 2>/dev/null || true
       fi
     else
       echo "[WARN] staging dir nao encontrado: ${staging_dir}" >&2

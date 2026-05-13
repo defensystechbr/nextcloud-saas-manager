@@ -31,7 +31,7 @@ source "${WORKER_SCRIPT_DIR}/lib/occ_bridge.sh"
 # ============================================================
 # Configuração (via env ou defaults)
 # ============================================================
-WORKER_JOBS_DIR="${WORKER_JOBS_DIR:-/opt/nextcloud-saas/jobs}"
+WORKER_JOBS_DIR="${WORKER_JOBS_DIR:-/opt/nextcloud-customers/jobs}"
 WORKER_FLOCK_FILE="${WORKER_FLOCK_FILE:-/run/nextcloud-saas-worker.lock}"
 WORKER_CALLBACK_BACKOFF="${WORKER_CALLBACK_BACKOFF:-5,30,300}"
 WORKER_CONCURRENCY="${WORKER_CONCURRENCY:-1}"

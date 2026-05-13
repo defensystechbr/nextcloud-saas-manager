@@ -649,7 +649,7 @@ inbox_staging_consume() {
   local staging_id="${1:?inbox_staging_consume: staging_id obrigatorio}"
   local job_id="${2:?inbox_staging_consume: job_id obrigatorio}"
   local inbox_base="${3:-/opt/nextcloud-customers/inbox}"
-  local jobs_dir="${4:-/opt/nextcloud-saas/jobs}"
+  local jobs_dir="${4:-/opt/nextcloud-customers/jobs}"
 
   # QA-004: validar UUID v4 (defense-in-depth além do parse_global_flags)
   if ! is_valid_uuid_v4 "$staging_id"; then
