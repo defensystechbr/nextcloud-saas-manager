@@ -26,25 +26,43 @@ source "${JOB_QUEUE_LIB_DIR}/output_json.sh"
 # WORKER_REDIS_DB      (default: 16)
 # WORKER_REDIS_PASS    (optional)
 
-_redis_cli() {
-  local host="${WORKER_REDIS_HOST:-127.0.0.1}"
-  local port="${WORKER_REDIS_PORT:-6379}"
-  local db="${WORKER_REDIS_DB:-16}"
-  local pass="${WORKER_REDIS_PASS:-}"
+# Resolve a senha do Redis em ordem de prioridade:
+#   1. WORKER_REDIS_PASS (worker.env / systemd)
+#   2. REDIS_PASSWORD    (exportado por load_shared_config)
+#   3. /opt/shared-services/.env direto (path --async antes de load_shared_config)
+_redis_pass() {
+  if [[ -n "${WORKER_REDIS_PASS:-}" ]]; then
+    echo "${WORKER_REDIS_PASS}"
+  elif [[ -n "${REDIS_PASSWORD:-}" ]]; then
+    echo "${REDIS_PASSWORD}"
+  else
+    local env_file="${SHARED_DIR:-/opt/shared-services}/.env"
+    grep -m1 '^REDIS_PASSWORD=' "$env_file" 2>/dev/null | cut -d= -f2- | tr -d '"' || true
+  fi
+}
 
-  local args=(-h "$host" -p "$port" -n "$db" --raw)
-  # Usar REDISCLI_AUTH em vez de -a para evitar exposição da senha no process list (ps aux)
-  REDISCLI_AUTH="$pass" redis-cli "${args[@]}" "$@"
+# Rota redis-cli: usa o binário do host se disponível; caso contrário,
+# executa via `docker exec shared-redis` para evitar dependência de
+# instalação do pacote redis-tools no host (ARCH-001).
+_redis_exec() {
+  local pass="${1}"; shift
+  if command -v redis-cli >/dev/null 2>&1; then
+    local host="${WORKER_REDIS_HOST:-127.0.0.1}"
+    local port="${WORKER_REDIS_PORT:-6379}"
+    REDISCLI_AUTH="$pass" redis-cli -h "$host" -p "$port" "$@"
+  else
+    docker exec -i -e REDISCLI_AUTH="$pass" shared-redis redis-cli "$@"
+  fi
+}
+
+_redis_cli() {
+  local db="${WORKER_REDIS_DB:-16}"
+  _redis_exec "$(_redis_pass)" -n "$db" --raw "$@"
 }
 
 _redis_raw_cli() {
-  local host="${WORKER_REDIS_HOST:-127.0.0.1}"
-  local port="${WORKER_REDIS_PORT:-6379}"
   local db="${WORKER_REDIS_DB:-16}"
-  local pass="${WORKER_REDIS_PASS:-}"
-
-  local args=(-h "$host" -p "$port" -n "$db" --raw)
-  REDISCLI_AUTH="$pass" redis-cli "${args[@]}" "$@"
+  _redis_exec "$(_redis_pass)" -n "$db" --raw "$@"
 }
 
 _scan_jobs_page() {
@@ -143,11 +161,15 @@ set_state() {
 _redis_cmd_t() {
   local t="${1:?_redis_cmd_t: timeout obrigatorio}"
   shift
-  local host="${WORKER_REDIS_HOST:-127.0.0.1}"
-  local port="${WORKER_REDIS_PORT:-6379}"
   local db="${WORKER_REDIS_DB:-16}"
-  local pass="${WORKER_REDIS_PASS:-}"
-  REDISCLI_AUTH="$pass" timeout "$t" redis-cli -h "$host" -p "$port" -n "$db" --raw "$@"
+  local pass; pass="$(_redis_pass)"
+  if command -v redis-cli >/dev/null 2>&1; then
+    local host="${WORKER_REDIS_HOST:-127.0.0.1}"
+    local port="${WORKER_REDIS_PORT:-6379}"
+    REDISCLI_AUTH="$pass" timeout "$t" redis-cli -h "$host" -p "$port" -n "$db" --raw "$@"
+  else
+    timeout "$t" docker exec -i -e REDISCLI_AUTH="$pass" shared-redis redis-cli -n "$db" --raw "$@"
+  fi
 }
 
 # ============================================================
