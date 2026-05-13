@@ -674,8 +674,9 @@
     ],
     "notes": "Sprint D5 concluida. 10/10 tasks. CHANGELOG.md publicado. Tag v12.0 criada."
   },
-  "beesy_version": "4.16.18-beta",
-  "decisions_applied_until": 178,
+  "beesy_version": "4.16.27-beta",
+  "decisions_applied_until": 187,
+  "ultimo_update": "2026-05-13T17:00:00-03:00",
   "strategic_context_captured_at": "2026-05-08T19:30:00-03:00",
   "pending_action": "Sprint N2 CONCLUIDA (v12.2 tag). Proximo: /pmo new para N3 (Feature F: Loki+Prometheus+Grafana).",
   "previous_sprint": "N2"
