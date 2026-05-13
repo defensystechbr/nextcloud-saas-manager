@@ -568,11 +568,11 @@
     }
   ],
   "compact_marker": {
-    "compacted_at": "2026-05-11T17:11:36Z",
-    "usage_percent": 91.39500000000001,
-    "messages_lost": 245
+    "compacted_at": "2026-05-13T03:36:48Z",
+    "usage_percent": 94.93350000000001,
+    "messages_lost": 303
   },
-  "compact_count": 1,
+  "compact_count": 2,
   "autopilot": {
     "active": false,
     "sprint_range": [
