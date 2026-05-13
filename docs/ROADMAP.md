@@ -1,4 +1,4 @@
-# Roadmap Tecnico — Nextcloud SaaS Manager v12.0
+# Roadmap Tecnico — Nextcloud SaaS Manager v12.2
 
 > Gerado em: 2026-05-07
 > Fase: 9 — Planejamento Tecnico (concluido)

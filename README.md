@@ -1,4 +1,4 @@
-# Nextcloud SaaS Manager v12.0
+# Nextcloud SaaS Manager v12.2
 
 Scripts para implantar e gerenciar uma plataforma Nextcloud SaaS multi-tenant com Docker, Traefik e Let's Encrypt. Suporta execução síncrona e assíncrona via fila Redis, com gateway SSH seguro para consumo por APIs REST externas.
 
