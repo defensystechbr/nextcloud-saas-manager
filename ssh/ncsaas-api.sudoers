@@ -1,0 +1,20 @@
+# ssh/ncsaas-api.sudoers
+# Drop-in para /etc/sudoers.d/ncsaas-api  (modo 0440, root:root)
+# Materializado a partir de docs/ARCHITECTURE.md Apêndice A.5 (canônico).
+#
+# Política (ADR-003):
+#   - O usuário ncsaas-api SÓ pode invocar 1 binário: /usr/local/bin/nextcloud-manage.
+#   - Sem TTY, sem renew de password (passa NOPASSWD).
+#   - Trilha forense via log_output (transcript em /var/log/ncsaas-api-sudo.log).
+#
+# VALIDAÇÃO OBRIGATÓRIA antes de instalar (sudoers quebrado = perda de acesso):
+#   sudo visudo -c -f ssh/ncsaas-api.sudoers
+
+Defaults:ncsaas-api !requiretty
+Defaults:ncsaas-api log_input=off, log_output=on, logfile="/var/log/ncsaas-api-sudo.log"
+Defaults:ncsaas-api use_pty
+Defaults:ncsaas-api env_reset
+
+# Única regra de elevação: 1 binário, sem args livres adicionais (sudo aceita
+# qualquer argv após o binário; a allowlist de argv é responsabilidade do shim).
+ncsaas-api ALL=(root) NOPASSWD: /usr/local/bin/nextcloud-manage

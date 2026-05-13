@@ -1,0 +1,17 @@
+#!/bin/bash
+# tests/fixtures/nextcloud-manage — Mock de /usr/local/bin/nextcloud-manage para testes
+# Comportamento controlado via variáveis de ambiente:
+#   NCM_EXIT    — exit code a retornar (default: 0)
+#   NCM_OUTPUT  — stdout a emitir (default: '{"schema_version":"1","status":"ok"}')
+#   NCM_SLEEP   — segundos para dormir antes de retornar (default: 0)
+
+output="${NCM_OUTPUT:-{\"schema_version\":\"1\",\"status\":\"ok\"}}"
+sleep_sec="${NCM_SLEEP:-0}"
+exit_code="${NCM_EXIT:-0}"
+
+if [[ "$sleep_sec" != "0" ]]; then
+  sleep "$sleep_sec"
+fi
+
+echo "$output"
+exit "$exit_code"

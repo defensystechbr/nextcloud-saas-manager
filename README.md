@@ -1,155 +1,124 @@
-# Nextcloud SaaS Manager v11.3.4
+# Nextcloud SaaS Manager v12.2
 
-Este repositório contém um conjunto de scripts para implantar e gerenciar uma plataforma Nextcloud SaaS multi-tenant, utilizando Docker, Traefik como reverse proxy e Let's Encrypt para certificados SSL automáticos.
+Scripts para implantar e gerenciar uma plataforma Nextcloud SaaS multi-tenant com Docker, Traefik e Let's Encrypt. Suporta execução síncrona e assíncrona via fila Redis, com gateway SSH seguro para consumo por APIs REST externas.
 
-O objetivo é permitir que qualquer pessoa com um servidor Ubuntu 24.04 (KVM) possa, seguindo este README, ter uma plataforma pronta para hospedar múltiplos clientes Nextcloud de forma segura e isolada.
+## Índice de Documentação
+
+| Documento | Conteúdo |
+|---|---|
+| [SSH-API-REFERENCE.md](docs/SSH-API-REFERENCE.md) | **Referência completa para APIs REST consumidoras** — comandos, flags, jobs assíncronos, idempotência, shim, webhooks, mapeamento REST↔SSH |
+| [ARCHITECTURE.md](docs/ARCHITECTURE.md) | Módulos, ADRs e topologia v12.0 |
+| [CONTRACTS.md](docs/CONTRACTS.md) | CLI, JSON Schemas, callback HMAC, Redis e integração API |
+| [REQUIREMENTS.md](docs/REQUIREMENTS.md) | Escopo funcional, NFRs, riscos e premissas |
+| [INFRASTRUCTURE.md](docs/INFRASTRUCTURE.md) | Tier 1 Proxmox/Ubuntu 24.04, firewall, storage e runbook |
+| [ADMINISTRATION.md](docs/ADMINISTRATION.md) | Operação diária, worker, fila, staging e hardening |
+| [TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | Diagnóstico de worker, SSH, socket-proxy e clientes |
+| [ROADMAP.md](docs/ROADMAP.md) | Sprints D1-D5 e gates de release |
 
 ---
 
-### Changelog
-| Versão | Data       | Principais Mudanças |
+## Changelog
+
+| Versão | Data | Principais Mudanças |
 |:-------|:-----------|:--------------------|
-| **v11.3.4** | 2026-05-04 | **Onboarding mais simples (zero `chmod`):** o passo de clone do repositório foi simplificado para apenas `git clone` + `cd`, sem SSH redundante e sem `chmod +x scripts/*.sh`. O deploy passa a ser sempre invocado via `sudo bash scripts/deploy-server.sh ...`, eliminando a dependência do bit de execução do filesystem (que não é preservado pelo `git clone` quando o arquivo está em modo `100644` no índice). O próprio `deploy-server.sh` aplica `chmod +x` no `manage.sh` quando o instala em `/opt/nextcloud-customers/`. Cabeçalhos do `deploy-server.sh` e do `manage.sh` atualizados para refletir o novo padrão de invocação e bumpados para v11.3.4. |
-| **v11.3.3** | 2026-05-04 | **Fix HaRP — "Deploy daemon `harp_install` inacessível":** o container `<cliente>-harp` passou a montar `/var/run/docker.sock:/var/run/docker.sock` (read-only) tanto no template gerado por `scripts/manage.sh` (linha 454) quanto no template embutido em `scripts/deploy-server.sh` (linha 338). O daemon AppAPI/HaRP precisa do socket do Docker no host para criar, atualizar e remover containers de ExApps; sem o mount o painel admin do Nextcloud exibia o aviso permanente *"Deploy daemon `harp_install` inacessível"* e qualquer instalação de ExApp falhava. Para instâncias legadas, ver guia em `docs/TROUBLESHOOTING.md` — seção *AppAPI / HaRP não funciona*, item 4. Validado em produção (`mecloud360`, `terminalx`, `nextcloud-teste`). |
-| **v11.3** | 2026-05-01 | **QA Round 3 — Correções críticas:** (1) Recording Server: adicionada seção `[signaling2]` com URL pública (`https://signaling-01...`) que elimina o erro `No configured signaling secret for https://...` e permite que o bot de gravação entre na chamada como participante. (2) Renomeado `recording.conf` → `server.conf` para alinhar com o `Dockerfile` (build estava quebrado em ambientes novos). (3) `setup-shared.sh` agora substitui placeholders no template `server.conf` no boot inicial (evita config inválida antes do primeiro cliente). (4) Removido secret hardcoded `janusoverlord` — agora `JANUS_ADMIN_SECRET` e `JANUS_ROOM_KEY` são gerados dinamicamente via `openssl rand -hex 32`. (5) `signaling.conf` template inicial não emite mais `backends = ` vazio (define `[backend1] placeholder.invalid`). (6) `manage.sh remove`: proteção `${VAR:?}` no `rm -rf` + `cd ... \|\| exit` em todos os pontos críticos. (7) Documentação: contagem de containers unificada para 3 por cliente (`app`, `cron`, `harp`). (8) Adicionado workflow GitHub Actions `shellcheck.yml` para auditoria automática em PRs. Validado por QA Round 3 contra deploy em produção `nxdev.defensys.seg.br` com SSL Labs A+, 12 apps funcionando e chamada Talk com gravação real. |
-| **v11.2** | 2026-05-01 | **Fix de bootstrap do Recording:** o template inicial gerado por `deploy-server.sh` para `recording.conf` (e também `signaling.conf`) tinha `backends = ` vazio, provocando `KeyError: ''` em loop no container `shared-recording` antes da criação da primeira instância. Agora o template traz um placeholder `backend1 → https://placeholder.invalid`, e as funções `update_*_backends` no `manage.sh` aplicam o mesmo fallback ao remover a última instância. README documenta que o deploy deve ser invocado com `sudo bash scripts/deploy-server.sh` (não depende do bit de execução após `git clone`). |
-| **v11.1** | 2026-05-01 | **Fixes Críticos do Talk:** (1) URL do TURN agora usa hostname `turn-01.defensys.seg.br` sem prefixo duplicado `turn:turn:`; (2) `recording_servers` aplicado via `run_occ` em vez de `echo yes \| docker exec` (eliminando erro `--update-only`); (3) template `recording.conf` reescrito com `backend1`/`signaling1` (sem hífen) eliminando `KeyError: ''` no boot; (4) nova variável `TURN_DOMAIN` no `manage.sh` e `deploy-server.sh` com flag CLI `--turn-domain`; (5) coturn ganha `lt-cred-mech` e `realm` por hostname. Validado por chamada Talk real entre 2 navegadores (1m46s). |
-| **v11.0** | 2026-04-30 | **Nova Arquitetura Compartilhada:** 3 containers por cliente + 8 globais. Fix de áudio/vídeo no Talk (coturn network_mode: host). Recording Server compartilhado (multi-backend). |
-| **v10.0** | 2026-02-13 | **Fix Crítico:** Nome do backend do Signaling alterado para `backend1` para evitar bugs com hífens. Adicionado `db:add-missing-indices` na instalação. |
-| **v9.1**  | 2026-02-12 | **Fix:** Corrigido registro do daemon HaRP e flags de inicialização. |
-| **v9.0**  | 2026-02-12 | **Recurso:** Integração completa do HPB (High-Performance Backend) para Talk e HaRP (AppAPI daemon), elevando a arquitetura para 10 containers. |
-| **v8.0**  | 2026-02-11 | **Segurança:** Removida exposição da porta 8080 do Traefik e desabilitado o dashboard inseguro. Acesso via `docker exec`. |
-| **v7.0**  | 2026-02-11 | **Docs:** Correção geral da documentação (`README`, `ADMINISTRATION`, `TROUBLESHOOTING`) com caminhos e comandos corretos. |
-| **v6.0**  | 2026-02-11 | **Docs:** Adicionados guias de Administração e Troubleshooting. |
-| **v5.0**  | 2026-02-11 | **Recurso:** Criação do script `deploy-server.sh` para automação do deploy do servidor. |
-| **v1.0 - v4.0** | 2026-02-10 | Lançamento inicial e refinamentos do `manage.sh` com arquitetura base (Nextcloud, Collabora, TURN). |
+| **v12.2** | 2026-05-13 | **Fixes de produção:** `legacy_helpers.sh` — `update_collabora_allowlist`, `update_signaling_backends` e `update_recording_backends` agora usam `\|\| log_warning` e `return 1` em vez de `exit 1`/bare command, tornando falhas de recarga de serviços compartilhados não-fatais para jobs create/remove/restore. `shared-services/docker-compose.yml` — rede `shared` declarada como `external: true` para corrigir erro de label do Docker Compose v2 em redes criadas manualmente. `scripts/lib/dispatch.sh` — `remove --async` agora inclui `--force` no `args_json` gravado no Redis. `scripts/worker.sh` — `RETURN` trap usa `kill ... \|\| true` para evitar crash loop quando processo renew já finalizou. `scripts/manage.sh` — loop de instalação de apps detecta "already installed" e sai do retry; `MANAGE_SCRIPT_DIR` resolvido via `readlink -f` para funcionar via symlink. |
+| **v12.1** | 2026-05-10 | **Fixes de estabilidade:** caminhos `WORKER_JOBS_DIR` corrigidos para `/opt/nextcloud-customers/jobs` em `manage.sh`, `worker.sh`, `job_queue.sh` e `feature_o_ext.sh`. `setup-worker.sh` reescrito para criar dirs, copiar scripts+libs, gerar secrets e injetar `WORKER_REDIS_PASS`. `nextcloud-saas-worker.service` — `StartLimitIntervalSec/Burst` movidos para `[Unit]`, `NotifyAccess=all` para watchdog funcionar com subshells, paths alinhados. `job_queue.sh` — `_redis_exec` usa `docker exec shared-redis redis-cli` quando `redis-cli` não está no host; flag `-i` removida do `docker exec`. |
+| **v12.0** | 2026-05-08 | Release v12.0: modo assíncrono Redis + worker systemd + SSH gateway, lifecycle de users/groups/apps (Feature O), staging SCP/SFTP para anexos, OCC sync passthrough allowlisted (Feature P), client-lock, health consolidado, socket-proxy para HaRP, secrets em arquivos e documentação operacional/contratual completa. |
+| **v12.0-dev** | 2026-05-08 | **Sprint D2 — Async Core:** Modo assíncrono completo via Redis queue + worker systemd + SSH gateway dedicado. `--async --json --idempotency-key --callback` em todos os comandos ASYNC_ALLOWED. Worker daemon (`nextcloud-saas-worker.service`) com BRPOP, callback HMAC-SHA256 e retry 5/30/300s. SSH gateway `ncsaas-api` (nologin + shim + sudoers) para consumo via API REST. Observabilidade NDJSON em journald (tags: `ncsaas-api-ssh`, `nextcloud-saas-worker`). Subcomandos: `worker status/stats`, `job <id> status/logs/cancel`, `job list`. |
+| **v12.0-dev** | 2026-05-07 | **Sprint D1 — Foundation:** Suite Bats (unit + integration), lib/* (validators, output_json, job_queue, job_runner, ssh_audit, legacy_helpers), CI (shellcheck.yml, bats.yml, contracts-check.yml), manage.sh refatorado, systemd units, SSH configs, socket-proxy env, occ_bridge skeleton. |
+| **v11.3** | 2026-05-04 | Fixes HaRP, recording, bootstrapping, segurança. |
+| **v11.0** | 2026-04-30 | Nova arquitetura compartilhada: 3 containers/cliente + 8 serviços globais. |
 
 ---
 
 ## Visão Geral da Arquitetura
 
+### Componentes
+
 | Componente | Descrição |
 |---|---|
-| **Servidor Host** | Ubuntu 24.04 LTS (KVM recomendado, **não** LXC) |
+| **Servidor Host** | Ubuntu 24.04 LTS (KVM obrigatório, não LXC) |
 | **Orquestração** | Docker Engine 29.x + Docker Compose plugin v2 |
-| **Reverse Proxy** | Traefik v3.x+ (latest) com Let's Encrypt automático |
-| **Gerenciamento** | `manage.sh` v11.3.4 (script para CRUD de instâncias) |
-| **Isolamento** | Arquitetura híbrida: **3 containers por cliente + 8 serviços compartilhados globais** |
-| **Rede** | Rede Docker `proxy` (Traefik) e `shared` (Serviços Compartilhados) |
+| **Reverse Proxy** | Traefik v3.x com Let's Encrypt automático |
+| **Gerenciamento** | `nextcloud-manage` v12.0 (CRUD de instâncias + fila async) |
+| **Worker daemon** | `nextcloud-saas-worker.service` (systemd, processa jobs Redis) |
+| **Gateway SSH** | Usuário `ncsaas-api` + shim de segurança para APIs REST |
+| **Fila** | Redis DB 16 (`nc:` prefix), worker com BRPOP |
+| **Isolamento** | 3 containers/cliente + 8 serviços compartilhados globais |
 
-### Arquitetura Compartilhada (introduzida na v11.0)
-
-Para otimizar o uso de recursos (CPU/Memória), a arquitetura agora divide os serviços em globais e específicos por cliente.
-
-**Serviços Compartilhados (8 containers globais):**
-- `shared-db`: MariaDB (1 database por cliente)
-- `shared-redis`: Redis (1 dbindex por cliente)
-- `shared-collabora`: Collabora Online (suporta multi-domínios via allowlist)
-- `shared-turn`: coturn STUN/TURN server (network_mode: host para WebRTC)
-- `shared-nats`: Message broker para Signaling
-- `shared-janus`: WebRTC media server para Talk
-- `shared-signaling`: Nextcloud Talk High Performance Backend (multi-tenant)
-- `shared-recording`: Talk Recording Server (multi-backend)
-
-**Serviços por Cliente (3 containers por instância):**
-
-A implementação atual provisiona três containers dedicados a cada cliente: o `<nome>-app` rodando Nextcloud com Apache e PHP isolado, o `<nome>-cron` responsável pelas tarefas de background (`cron.sh`), e o `<nome>-harp` que atua como daemon do AppAPI (HaRP) para hospedar ExApps externos. O container `harp` recebe o socket do Docker do host (`/var/run/docker.sock`, mount RW) por exigência do daemon AppAPI, que precisa criar e gerenciar containers de ExApps no host — sem esse mount, o painel admin exibe o aviso *"Deploy daemon `harp_install` inacessível"* (corrigido em **v11.3.3**).
-
-### DNS Necessários
-
-**Dominios Fixos (Globais)** — substitua `EXEMPLO.com.br` pelo dominio que voce controla:
-- `collabora-01.EXEMPLO.com.br` (Collabora Online)
-- `signaling-01.EXEMPLO.com.br` (Talk High Performance Backend)
-- `turn-01.EXEMPLO.com.br` (coturn STUN/TURN — usado pelo Talk para WebRTC, aponta para o IP publico do servidor)
-
-Todos devem ser configurados como registros DNS tipo `A` apontando para o IP do servidor **antes** de rodar o deploy. Os tres devem ser passados via `--collabora-domain`, `--signaling-domain` e `--turn-domain` no `deploy-server.sh`.
-
-**Por Instância de Cliente:**
-Cada instância requer **apenas 1 registro DNS do tipo A** apontando para o IP do servidor:
-
-| Registro DNS | Exemplo | Função |
-|---|---|---|
-| Domínio do Nextcloud | `nextcloud.acme.com.br` | Acesso à aplicação isolada do cliente |
-
-### Estrutura de Diretórios no Servidor
-
-Após o deploy, o servidor terá a seguinte estrutura:
+### Fluxo de uma operação assíncrona
 
 ```
-/opt/
-├── traefik/                          # Reverse proxy
-│   ├── docker-compose.yml            # Compose do Traefik
-│   ├── config/
-│   │   └── traefik.yml               # Configuração do Traefik
-│   ├── acme.json                     # Certificados Let's Encrypt (gerado automaticamente)
-│   └── logs/
-│       ├── traefik.log
-│       └── access.log
-│
-├── shared-services/                  # Serviços Compartilhados (introduzido na v11.0)
-│   ├── docker-compose.yml            # Compose dos serviços globais
-│   ├── .env                          # Credenciais compartilhadas
-│   ├── setup-shared.sh               # Script de inicialização
-│   └── ...                           # Configurações (coturn, janus, etc)
-│
-└── nextcloud-customers/              # Diretório principal da plataforma
-    ├── manage.sh                     # Script de gerenciamento (v11.3.4+)
-    ├── backups/                      # Backups de todas as instâncias
-    ├── <nome-cliente-1>/             # Instância do cliente 1
-    │   ├── docker-compose.yml        # Compose da instância (app + cron)
-    │   ├── .env                      # Configuração específica do cliente
-    │   ├── .credentials              # Arquivo de credenciais legível
-    │   ├── app/                      # Dados do Nextcloud
-    │   └── harp-certs/               # Certificados HaRP
-    └── <nome-cliente-2>/
-        └── ...
-
-/usr/local/bin/
-└── nextcloud-manage -> /opt/nextcloud-customers/manage.sh   # Link simbólico
+REST API (seu projeto)
+    │
+    │  SSH como ncsaas-api (chave Ed25519)
+    ▼
+ncsaas-api-shim          ← valida verbos, rejeita injeção, audita
+    │
+    └─► sudo nextcloud-manage <client> <domain> <cmd> --async --json
+              │
+              └─► Redis DB 16: LPUSH nc:jobs:queue <job_id>
+                       │
+              nextcloud-saas-worker (systemd)
+                       │
+                       └─► executa cmd → grava log → POST callback HMAC
 ```
+
+### Serviços no servidor
+
+**8 containers compartilhados (globais):**
+
+| Container | Função |
+|---|---|
+| `shared-db` | MariaDB — 1 database isolado por cliente |
+| `shared-redis` | Redis — 1 dbindex por cliente + DB 16 para fila |
+| `shared-collabora` | Collabora Online (multi-domínio via allowlist) |
+| `shared-turn` | coturn STUN/TURN para WebRTC (network_mode: host) |
+| `shared-nats` | Message broker para Signaling |
+| `shared-janus` | WebRTC media server para Talk |
+| `shared-signaling` | Talk High Performance Backend (multi-tenant) |
+| `shared-recording` | Talk Recording Server (multi-backend) |
+
+**3 containers por cliente:**
+
+| Container | Função |
+|---|---|
+| `<client>-app` | Nextcloud com Apache/PHP |
+| `<client>-cron` | Background jobs (`cron.sh`) |
+| `<client>-harp` | Daemon AppAPI (HaRP) via socket-proxy |
+
+### DNS necessários
+
+**Domínios globais** (configurar antes do deploy do servidor):
+- `collabora-01.SEU-DOMINIO.com.br` → IP do servidor
+- `signaling-01.SEU-DOMINIO.com.br` → IP do servidor
+- `turn-01.SEU-DOMINIO.com.br` → IP do servidor
+
+**Por cliente** (configurar antes de criar cada instância):
+- `nextcloud.cliente.com.br` → IP do servidor (1 registro A por cliente)
 
 ---
 
-## Como Começar: Deploy de um Novo Servidor
-
-Siga estes passos para preparar um novo servidor do zero.
+## Deploy de um Novo Servidor
 
 ### Pré-requisitos
 
-O servidor deve atender aos seguintes requisitos antes de iniciar o deploy:
-
 | Requisito | Detalhe |
 |---|---|
-| **Sistema Operacional** | Ubuntu 24.04 LTS (instalação limpa) |
-| **Virtualização** | **KVM/QEMU obrigatório** — NÃO use LXC (incompatível com Docker 29.x) |
+| **Sistema** | Ubuntu 24.04 LTS (instalação limpa) |
+| **Virtualização** | KVM/QEMU — **NÃO use LXC** (incompatível com Docker 29.x) |
 | **Acesso** | Root ou sudo sem senha |
-| **Portas livres** | 80 (HTTP), 443 (HTTPS) |
-| **Internet** | Acesso à internet para baixar imagens Docker e emitir certificados |
-| **E-mail** | Um e-mail válido para registro de certificados Let's Encrypt |
+| **Portas** | 80 (HTTP), 443 (HTTPS) livres |
+| **DNS** | Domínios globais já apontando para o IP antes do deploy |
 
-### Passo 1: Clonar o Repositório
-
-Já conectado ao servidor de destino, clone este repositório em qualquer diretório (sugestão: `/root` ou `~`):
+### Passo 1: Clonar o repositório
 
 ```bash
-git clone https://github.com/defensystechbr/nextcloud-saas-manager.git
-cd nextcloud-saas-manager
+git clone https://github.com/SoftwareBeesy/mework360-deploy-scripts.git
+cd mework360-deploy-scripts
 ```
 
-> **Sobre permissões:** os scripts deste repositório são sempre invocados via `bash <script>` (veja Passo 2 e o guia de administração), portanto não é necessário rodar `chmod +x` manualmente. O próprio `deploy-server.sh` aplica `chmod +x` no `manage.sh` quando o instala em `/opt/nextcloud-customers/`.
-
-### Passo 2: Executar o Script de Deploy
-
-O script `deploy-server.sh` automatiza toda a preparação do servidor. Ele executa as seguintes etapas:
-
-1. Atualiza o sistema e instala dependências (`curl`, `jq`, `pwgen`, `openssl`).
-2. Instala o Docker Engine e Docker Compose (plugin v2) do repositório oficial.
-3. Cria a rede Docker `proxy` e a estrutura de diretórios.
-4. Configura e inicia o Traefik v3.x (latest) com Let's Encrypt (sem porta 8080 exposta).
-5. Instala o `manage.sh` v11.3.4 em `/opt/nextcloud-customers/` e cria o link simbólico `/usr/local/bin/nextcloud-manage`.
-6. Configura e inicia os **Serviços Compartilhados** em `/opt/shared-services/`.
-
-Execute com seu e-mail e os tres dominios compartilhados (todos obrigatorios). Os scripts são sempre chamados com `bash` — isso evita depender do bit de execução do filesystem ou do estado pós-`git clone`:
+### Passo 2: Executar o deploy
 
 ```bash
 sudo bash scripts/deploy-server.sh \
@@ -159,110 +128,208 @@ sudo bash scripts/deploy-server.sh \
     --turn-domain turn-01.SEU-DOMINIO.com.br
 ```
 
-> **Substitua `SEU-DOMINIO.com.br` pelo dominio que voce controla** e que ja tenha registros DNS A apontando para o IP do servidor (ver secao `DNS Necessarios` acima).
+O script instala Docker, configura Traefik, sobe os 8 serviços compartilhados e instala `nextcloud-manage` em `/usr/local/bin/`.
 
-Opcionalmente, pode forcar o IP do servidor (util se a deteccao automatica falhar):
+### Passo 3: Instalar o worker assíncrono
 
 ```bash
-sudo bash scripts/deploy-server.sh \
-    --email seu-email@dominio.com \
-    --ip 200.50.151.10 \
-    --collabora-domain collabora-01.SEU-DOMINIO.com.br \
-    --signaling-domain signaling-01.SEU-DOMINIO.com.br \
-    --turn-domain turn-01.SEU-DOMINIO.com.br
+sudo bash scripts/setup-worker.sh
+sudo systemctl enable --now nextcloud-saas-worker
+sudo systemctl status nextcloud-saas-worker
 ```
 
-> **Importante:** se voce nao passar `--turn-domain`, o `manage.sh` instalado ficara com o default `turn-01.defensys.seg.br` hardcoded e gerara configuracoes erradas para suas instancias. Sempre passe os tres dominios.
+### Passo 4: Configurar o gateway SSH (para APIs REST)
 
-Ao final, o script exibirá um resumo com todas as informações do servidor. O servidor agora está pronto para receber clientes.
+```bash
+sudo bash scripts/setup-ssh-gateway.sh
+```
+
+Isso cria o usuário `ncsaas-api`, instala o shim de segurança e configura o `sshd`. Veja a seção [Gateway SSH](#gateway-ssh-ncsaas-api-shim) abaixo.
 
 ---
 
-## Administrando Instâncias de Clientes
+## Administrando Instâncias
 
-Após o deploy do servidor, use o comando `nextcloud-manage` para gerenciar instâncias. O comando está disponível globalmente graças ao link simbólico em `/usr/local/bin/`.
-
-A sintaxe geral é:
+Use `nextcloud-manage` (disponível globalmente após o deploy):
 
 ```
-sudo nextcloud-manage <nome-do-cliente> <domínio-ou-placeholder> <comando>
+sudo nextcloud-manage <cliente> <domínio|_> <comando> [flags]
 ```
 
-Onde:
+### Comandos disponíveis
 
-| Parâmetro | Descrição | Exemplo |
+| Comando | Sintaxe | Async? |
 |---|---|---|
-| `<nome-do-cliente>` | Identificador curto e único (sem espaços ou caracteres especiais) | `acme`, `nxuorg`, `cliente1` |
-| `<domínio-ou-placeholder>` | Domínio do Nextcloud (usado no `create` e `restore`) ou `_` (underscore) como placeholder para os demais comandos | `nextcloud.acme.com.br` ou `_` |
-| `<comando>` | Ação a executar | `create`, `status`, `backup`, etc. |
+| `create` | `nextcloud-manage acme cloud.acme.com create` | Sim |
+| `remove` | `nextcloud-manage acme _ remove --force` | Sim |
+| `status` | `nextcloud-manage acme _ status` | Não |
+| `credentials` | `nextcloud-manage acme _ credentials` | Não |
+| `backup` | `nextcloud-manage acme _ backup` | Sim |
+| `restore` | `nextcloud-manage acme /path/backup.tar.gz restore` | Sim |
+| `stop` | `nextcloud-manage acme _ stop` | Sim |
+| `start` | `nextcloud-manage acme _ start` | Sim |
+| `update` | `nextcloud-manage acme _ update` | Sim |
+| `backup-offsite` | `nextcloud-manage acme _ backup-offsite` | Não |
+| `health` | `nextcloud-manage health --json` | Não |
+| `list` | `nextcloud-manage list` | Não |
 
-### Passo 1: Configurar DNS (OBRIGATÓRIO antes de criar)
+### Flags globais
 
-Antes de criar uma nova instância, você **deve** configurar **1 registro DNS do tipo A** no provedor DNS do cliente apontando para o IP do servidor:
+| Flag | Descrição |
+|---|---|
+| `--async` | Enfileira o job em vez de executar sincronamente |
+| `--json` | Saída estruturada JSON (obrigatório para APIs) |
+| `--dry-run` | Simula sem efeitos colaterais |
+| `--idempotency-key=<uuid>` | Deduplicação de jobs (janela 24h) |
+| `--callback=<url>` | Webhook HTTPS ao completar o job |
+| `--force` | Pula confirmação interativa (ex: remove) |
+| `--payload-stdin` | Lê payload JSON de stdin (para senhas) |
 
-| Registro DNS (Tipo A) | Exemplo | Aponta para |
-|---|---|---|
-| Domínio do Nextcloud | `nextcloud.acme.com.br` | `IP_DO_SERVIDOR` |
-
-**Aguarde a propagação do DNS** antes de prosseguir. O Traefik não conseguirá emitir os certificados SSL se o DNS não estiver resolvendo para o IP do servidor.
-
-### Passo 2: Criar a Instância
+### Exemplo: criar instância
 
 ```bash
-sudo nextcloud-manage acme nextcloud.acme.com.br create
+# Síncrono (bloqueia ~10 min)
+sudo nextcloud-manage acme cloud.acme.com.br create
+
+# Assíncrono (retorna em <2s, worker executa em background)
+sudo nextcloud-manage acme cloud.acme.com.br create --async --json \
+  --idempotency-key=$(uuidgen | tr '[:upper:]' '[:lower:]') \
+  --callback=https://sua-api.com/webhooks/jobs
 ```
 
-O script irá:
-1. Verificar se o registro DNS está resolvendo corretamente.
-2. Gerar credenciais e criar o database no MariaDB compartilhado.
-3. Alocar um DB index exclusivo no Redis compartilhado.
-4. Criar o `docker-compose.yml` e o `.env` em `/opt/nextcloud-customers/acme/`.
-5. Subir os **3 containers** do cliente (`app`, `cron` e `harp`).
-6. Aguardar o Nextcloud inicializar.
-7. Configurar integração com os serviços compartilhados (Collabora, Talk HPB, TURN, Redis, HaRP).
-8. Exibir as credenciais completas da nova instância.
+### Monitorar jobs
 
-### Referência Completa de Comandos
+```bash
+# Listar todos os jobs
+nextcloud-manage job list --json
 
-| Comando | Sintaxe | Descrição |
-|---|---|---|
-| **create** | `sudo nextcloud-manage acme nextcloud.acme.com.br create` | Cria uma nova instância |
-| **status** | `sudo nextcloud-manage acme _ status` | Mostra status dos containers e URLs |
-| **credentials** | `sudo nextcloud-manage acme _ credentials` | Exibe as credenciais da instância |
-| **backup** | `sudo nextcloud-manage acme _ backup` | Faz backup completo (dados + banco) para `/opt/nextcloud-customers/backups/` |
-| **restore** | `sudo nextcloud-manage acme /caminho/do/backup.tar.gz restore` | Restaura uma instância a partir de um backup |
-| **stop** | `sudo nextcloud-manage acme _ stop` | Para todos os containers da instância |
-| **start** | `sudo nextcloud-manage acme _ start` | Inicia todos os containers da instância |
-| **update** | `sudo nextcloud-manage acme _ update` | Faz backup, puxa novas imagens e executa upgrade |
-| **remove** | `sudo nextcloud-manage acme _ remove` | Remove a instância e todos os dados (**irreversível**) |
-| **list** | `sudo nextcloud-manage list` | Lista todas as instâncias e seus status |
+# Status de um job específico
+nextcloud-manage job <job_id> status --json
 
-Para mais detalhes sobre cada operação, consulte a [Documentação de Administração](docs/ADMINISTRATION.md).
+# Logs de um job
+nextcloud-manage job <job_id> logs
 
-Para resolver problemas comuns, consulte o [Guia de Troubleshooting](docs/TROUBLESHOOTING.md).
+# Cancelar job em fila
+nextcloud-manage job <job_id> cancel
+
+# Status do worker
+nextcloud-manage worker status --json
+nextcloud-manage worker stats --by-cmd --by-client --json
+```
+
+---
+
+## Gateway SSH — `ncsaas-api-shim`
+
+O `ncsaas-api-shim` é o portão de segurança entre uma API REST externa e o `nextcloud-manage`. Sem ele, a chave SSH daria acesso shell root ao servidor.
+
+### Como funciona
+
+```
+API REST → SSH como ncsaas-api → shim → sudo nextcloud-manage
+                                  ↑
+                    Valida: sem metacaracteres de shell
+                            argv[0] == nextcloud-manage
+                            verbo na allowlist
+                            sem --password em argv
+                    Audita: NDJSON em journald (tag: ncsaas-api-ssh)
+```
+
+**Três camadas de proteção redundantes:**
+1. `authorized_keys` com `command="/usr/local/bin/ncsaas-api-shim"` — bloqueia shell mesmo que sshd falhe
+2. `sshd ForceCommand` em `/etc/ssh/sshd_config.d/50-ncsaas-api.conf`
+3. `sudoers` restrito: `ncsaas-api` só pode executar `/usr/local/bin/nextcloud-manage`
+
+### Uso pela API REST
+
+```bash
+# Em vez de ssh root@servidor (inseguro), usar:
+ssh -i /path/to/api_key ncsaas-api@servidor \
+  "nextcloud-manage acme cloud.acme.com create --async --json"
+```
+
+A sintaxe do comando é idêntica. Só muda o usuário SSH.
+
+### Audit log
+
+```bash
+# Monitorar em tempo real
+journalctl -t ncsaas-api-ssh -f
+
+# Ver rejeições
+journalctl -t ncsaas-api-ssh | grep '"reject"'
+```
+
+Cada linha contém `key_id` (fingerprint SHA256 da chave), IP do cliente e o comando sanitizado (senhas mascaradas com `***`).
+
+### Kill-switch de emergência
+
+```bash
+usermod -L ncsaas-api   # Desabilita acesso imediatamente
+```
+
+> Para documentação completa do shim (instalação, allowlist, rotação de chaves, tabela de diretivas sshd), veja [SSH-API-REFERENCE.md — Seção 1.5](docs/SSH-API-REFERENCE.md#15-o-ncsaas-api-shim--portão-de-segurança-ssh).
+
+---
+
+## Integrando com uma API REST
+
+> **Para IAs implementando a API REST:** leia o [SSH-API-REFERENCE.md](docs/SSH-API-REFERENCE.md) — documento completo com todos os comandos, saídas JSON, ciclo de vida de jobs, idempotência, webhooks e mapeamento REST→SSH.
+
+### Mapeamento de endpoints sugerido
+
+| Endpoint REST | Comando SSH |
+|---|---|
+| `POST /tenants` | `create --async --json --idempotency-key=<uuid>` |
+| `DELETE /tenants/{client}` | `remove --force --async --json` |
+| `GET /tenants/{client}` | `status` |
+| `GET /tenants/{client}/credentials` | `credentials` |
+| `POST /tenants/{client}/backup` | `backup --async --json` |
+| `GET /jobs/{id}` | `job <id> status --json` |
+| `GET /jobs/{id}/logs` | `job <id> logs` |
+| `DELETE /jobs/{id}` | `job <id> cancel --json` |
+| `GET /health` | `health --json` |
+
+### Saída de job enfileirado
+
+```json
+{
+  "schema_version": "1",
+  "job_id": "550e8400-e29b-41d4-a716-446655440000",
+  "state": "queued",
+  "cmd": "create",
+  "client": "acme",
+  "domain": "cloud.acme.com.br",
+  "queued_at": "2026-05-13T04:00:00Z"
+}
+```
+
+### Idempotência
+
+Use `--idempotency-key=<uuid-v4>` para garantir que retries não criem jobs duplicados. O servidor armazena `nc:idem:<uuid>` no Redis com TTL de 24h. Enviar a mesma chave + mesmos args retorna o job original com `"idempotent": true`.
 
 ---
 
 ## Aplicativos Instalados Automaticamente
 
-Cada nova instância inclui os seguintes aplicativos pré-configurados:
+Cada nova instância inclui:
 
-| Aplicativo | Descrição |
+| App | Descrição |
 |---|---|
-| **Nextcloud Office** (richdocuments) | Edição colaborativa via Collabora Online |
-| **Calendar** | Calendário com suporte a CalDAV |
-| **Contacts** | Contatos com suporte a CardDAV |
-| **Mail** | Cliente de e-mail integrado |
-| **Deck** | Kanban para gerenciamento de projetos |
-| **Forms** | Formulários e pesquisas |
-| **Notes** | Notas em Markdown |
-| **Tasks** | Gerenciamento de tarefas |
-| **Group Folders** | Pastas compartilhadas por grupo |
-| **Photos** | Galeria de fotos |
-| **Activity** | Registro de atividades |
-| **Talk** (spreed) | Chat, chamadas de voz/vídeo com HPB |
-| **AppAPI** | API para aplicativos externos (com HaRP) |
-| **Client Push** (notify_push) | Notificações push em tempo real |
+| Nextcloud Office (richdocuments) | Edição colaborativa via Collabora Online |
+| Calendar | CalDAV |
+| Contacts | CardDAV |
+| Mail | Cliente de e-mail integrado |
+| Deck | Kanban |
+| Forms | Formulários e pesquisas |
+| Notes | Notas Markdown |
+| Tasks | Tarefas |
+| Group Folders | Pastas por grupo |
+| Photos | Galeria |
+| Activity | Log de atividades |
+| Talk (spreed) | Chat e chamadas com HPB |
+| AppAPI | Daemon para ExApps (HaRP) |
+| Client Push (notify_push) | Notificações em tempo real |
 
 ---
 
@@ -270,32 +337,90 @@ Cada nova instância inclui os seguintes aplicativos pré-configurados:
 
 ```
 nextcloud-saas-manager/
-├── README.md                      # Este arquivo
-├── LICENSE                        # Licença MIT
-├── .gitignore
-├── .github/
-│   └── workflows/
-│       └── shellcheck.yml         # CI: lint automatico de scripts em PRs
 ├── scripts/
-│   ├── deploy-server.sh           # Script para preparar um novo servidor do zero
-│   └── manage.sh                  # Script para gerenciar instancias de clientes (v11.3+)
-├── shared-services/               # Definicoes dos servicos compartilhados (8 containers)
-│   ├── docker-compose.yml         # Compose dos shared-services
-│   ├── setup-shared.sh            # Script alternativo standalone para subir shared-services
-│   └── recording/
-│       ├── Dockerfile             # Imagem custom do Recording Server (opcional)
-│       └── server.conf            # Template de configuracao do Recording Server
-└── docs/
-    ├── ADMINISTRATION.md          # Guia completo de administracao de instancias
-    └── TROUBLESHOOTING.md         # Guia para resolver problemas comuns
+│   ├── manage.sh                  # Script principal (CRUD de instâncias)
+│   ├── worker.sh                  # Worker daemon de jobs assíncronos
+│   ├── deploy-server.sh           # Deploy de servidor do zero
+│   ├── setup-worker.sh            # Instala e configura o worker daemon
+│   ├── setup-ssh-gateway.sh       # Configura usuário ncsaas-api + shim
+│   ├── ncsaas-api-shim            # Portão de segurança SSH para APIs REST
+│   └── lib/
+│       ├── validators.sh          # Validadores puros (client, FQDN, UUID)
+│       ├── output_json.sh         # emit_json, emit_error, log_event
+│       ├── job_queue.sh           # Operações Redis (enqueue, get_state, scan)
+│       ├── job_runner.sh          # Execução de job isolada pelo worker
+│       ├── dispatch.sh            # Parser legado + namespaces + idempotência
+│       ├── legacy_helpers.sh      # update_collabora/signaling/recording
+│       ├── feature_o.sh           # Lifecycle users/groups/apps
+│       ├── feature_o_ext.sh       # Extensão Feature O (ext commands)
+│       ├── occ_bridge.sh          # OCC sync passthrough (Feature P)
+│       ├── health_checks.sh       # 8 checks paralelos com timeout
+│       ├── backup_offsite.sh      # Backup remoto via Restic
+│       └── ssh_audit.sh           # Auditoria NDJSON journald
+├── shared-services/
+│   ├── docker-compose.yml         # 8 containers compartilhados
+│   └── setup-shared.sh            # Script de inicialização compartilhada
+├── ssh/
+│   ├── 50-ncsaas-api.sshd.conf    # Drop-in sshd para ncsaas-api
+│   ├── 51-ncsaas-api-sftp.conf    # SFTP jail para staging (Feature O)
+│   ├── authorized_keys.example    # Modelo para ~ncsaas-api/.ssh/authorized_keys
+│   └── ncsaas-api.sudoers         # Regra sudo restrita ao nextcloud-manage
+├── systemd/
+│   ├── nextcloud-saas-worker.service    # Worker daemon
+│   ├── nextcloud-saas-worker.env.example
+│   ├── nextcloud-saas-backup@.service   # Backup por cliente (timer)
+│   ├── nextcloud-saas-backup@.timer
+│   ├── nextcloud-saas-jobs-gc.service   # GC de jobs expirados
+│   └── nextcloud-saas-jobs-gc.timer
+├── tests/
+│   ├── unit/                      # Testes unitários Bats
+│   ├── integration/               # Testes de integração Bats
+│   └── fixtures/                  # Stubs de docker, redis-cli, etc.
+├── docs/
+│   ├── SSH-API-REFERENCE.md       # Referência para APIs REST consumidoras
+│   ├── ARCHITECTURE.md
+│   ├── CONTRACTS.md
+│   ├── REQUIREMENTS.md
+│   ├── INFRASTRUCTURE.md
+│   ├── ADMINISTRATION.md
+│   ├── TROUBLESHOOTING.md
+│   └── ROADMAP.md
+└── .github/
+    └── workflows/                 # CI: shellcheck, bats, contracts-check
+```
+
+### Estrutura no servidor após deploy
+
+```
+/opt/
+├── traefik/                       # Reverse proxy
+├── shared-services/               # 8 containers globais + secrets
+│   └── secrets/                   # harp_shared_key, etc. (chmod 600)
+└── nextcloud-customers/
+    ├── scripts/                   # manage.sh + libs (copiados pelo setup)
+    ├── jobs/                      # Logs de jobs async (<job_id>/output.log)
+    ├── backups/                   # Backups locais
+    └── <cliente>/                 # Uma pasta por tenant
+        ├── .env                   # CLIENT_NAME, DOMAIN, REDIS_DB
+        ├── .credentials           # Credenciais completas (chmod 600)
+        ├── docker-compose.yml
+        ├── app/                   # Volume Nextcloud
+        └── harp-certs/
+
+/usr/local/bin/
+├── nextcloud-manage -> /opt/nextcloud-customers/scripts/manage.sh
+└── ncsaas-api-shim                # Portão de segurança SSH
+
+/opt/nextcloud-saas-worker/
+└── .env                           # WORKER_REDIS_PASS, WORKER_CALLBACK_SECRET
 ```
 
 ---
 
 ## Contribuindo
 
-Contribuições são bem-vindas. Sinta-se à vontade para abrir uma issue ou enviar um pull request.
+Contribuições são bem-vindas. Abra uma issue ou pull request no repositório.
 
 ## Licença
 
-Este projeto é licenciado sob a Licença MIT. Veja o arquivo [LICENSE](LICENSE) para mais detalhes.
+MIT. Veja [LICENSE](LICENSE).

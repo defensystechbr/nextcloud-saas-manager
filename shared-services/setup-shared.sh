@@ -54,6 +54,78 @@ fi
 generate_password() { openssl rand -hex 16; }
 generate_secret()   { openssl rand -hex 32; }
 
+SECRETS_DIR="${SHARED_DIR}/secrets"
+
+ensure_secret_file() {
+    local name="$1"
+    local generator="$2"
+    install -d -m 0700 "$SECRETS_DIR"
+    if [ ! -f "${SECRETS_DIR}/${name}" ]; then
+        if [ "$generator" = "hex16" ]; then
+            openssl rand -hex 16 > "${SECRETS_DIR}/${name}"
+        else
+            "$generator" > "${SECRETS_DIR}/${name}"
+        fi
+        chmod 600 "${SECRETS_DIR}/${name}"
+    fi
+}
+
+read_secret_file() {
+    local name="$1"
+    tr -d '\n' < "${SECRETS_DIR}/${name}"
+}
+
+write_shared_env_references() {
+    cat > "$SHARED_DIR/.env" << EOF
+# Nextcloud SaaS — Shared Services Configuration
+# Gerado em: $(date '+%Y-%m-%d %H:%M:%S')
+
+SERVER_IP=${SERVER_IP}
+COLLABORA_DOMAIN=${COLLABORA_DOMAIN}
+SIGNALING_DOMAIN=${SIGNALING_DOMAIN}
+TURN_DOMAIN=${TURN_DOMAIN}
+SECRETS_DIR=${SECRETS_DIR}
+
+DB_ROOT_PASSWORD_FILE=${SECRETS_DIR}/db_root_password
+REDIS_PASSWORD_FILE=${SECRETS_DIR}/redis_password
+COLLABORA_ADMIN_PASSWORD_FILE=${SECRETS_DIR}/collabora_admin_password
+TURN_SECRET_FILE=${SECRETS_DIR}/turn_secret
+SIGNALING_SECRET_FILE=${SECRETS_DIR}/signaling_secret
+SIGNALING_HASH_KEY_FILE=${SECRETS_DIR}/signaling_hash_key
+SIGNALING_BLOCK_KEY_FILE=${SECRETS_DIR}/signaling_block_key
+SIGNALING_INTERNAL_SECRET_FILE=${SECRETS_DIR}/signaling_internal_secret
+HARP_SHARED_KEY_FILE=${SECRETS_DIR}/harp_shared_key
+RECORDING_SECRET_FILE=${SECRETS_DIR}/recording_secret
+JANUS_ADMIN_SECRET_FILE=${SECRETS_DIR}/janus_admin_secret
+JANUS_ROOM_KEY_FILE=${SECRETS_DIR}/janus_room_key
+WORKER_CALLBACK_SECRET_FILE=${SECRETS_DIR}/worker_callback_secret
+COLLABORA_ALLOWLIST=${COLLABORA_ALLOWLIST:-}
+EOF
+    chmod 600 "$SHARED_DIR/.env"
+}
+
+load_shared_secrets() {
+    # shellcheck disable=SC1090
+    [ -f "$SHARED_DIR/.env" ] && source "$SHARED_DIR/.env"
+    DB_ROOT_PASSWORD="$(read_secret_file db_root_password)"
+    REDIS_PASSWORD="$(read_secret_file redis_password)"
+    COLLABORA_ADMIN_PASSWORD="$(read_secret_file collabora_admin_password)"
+    TURN_SECRET="$(read_secret_file turn_secret)"
+    SIGNALING_SECRET="$(read_secret_file signaling_secret)"
+    SIGNALING_HASH_KEY="$(read_secret_file signaling_hash_key)"
+    SIGNALING_BLOCK_KEY="$(read_secret_file signaling_block_key)"
+    SIGNALING_INTERNAL_SECRET="$(read_secret_file signaling_internal_secret)"
+    HARP_SHARED_KEY="$(read_secret_file harp_shared_key)"
+    RECORDING_SECRET="$(read_secret_file recording_secret)"
+    JANUS_ADMIN_SECRET="$(read_secret_file janus_admin_secret)"
+    JANUS_ROOM_KEY="$(read_secret_file janus_room_key)"
+    WORKER_CALLBACK_SECRET="$(read_secret_file worker_callback_secret)"
+    export DB_ROOT_PASSWORD REDIS_PASSWORD COLLABORA_ADMIN_PASSWORD TURN_SECRET
+    export SIGNALING_SECRET SIGNALING_HASH_KEY SIGNALING_BLOCK_KEY SIGNALING_INTERNAL_SECRET
+    export HARP_SHARED_KEY RECORDING_SECRET JANUS_ADMIN_SECRET JANUS_ROOM_KEY WORKER_CALLBACK_SECRET
+}
+
+
 log_info "============================================"
 log_info "Nextcloud SaaS — Setup Serviços Compartilhados"
 log_info "============================================"
@@ -72,74 +144,25 @@ mkdir -p "$SHARED_DIR"/{db,redis,hpb,recording}
 # ============================================================
 # GERAR CREDENCIAIS (se não existirem)
 # ============================================================
-if [ ! -f "$SHARED_DIR/.env" ]; then
-    log_info "Gerando credenciais..."
-    DB_ROOT_PASSWORD=$(generate_password)
-    REDIS_PASSWORD=$(generate_password)
-    COLLABORA_ADMIN_PASSWORD=$(generate_password)
-    TURN_SECRET=$(generate_secret)
-    SIGNALING_SECRET=$(generate_secret)
-    SIGNALING_HASH_KEY=$(generate_secret)
-    SIGNALING_BLOCK_KEY=$(openssl rand -hex 16)  # MUST be 16 bytes (32 hex chars)
-    SIGNALING_INTERNAL_SECRET=$(generate_secret)
-    HARP_SHARED_KEY=$(generate_password)
-    RECORDING_SECRET=$(generate_secret)
-    JANUS_ADMIN_SECRET=$(generate_secret)
-    JANUS_ROOM_KEY=$(generate_secret)
+log_info "Preparando secrets em ${SECRETS_DIR}..."
+ensure_secret_file db_root_password generate_password
+ensure_secret_file redis_password generate_password
+ensure_secret_file collabora_admin_password generate_password
+ensure_secret_file turn_secret generate_secret
+ensure_secret_file signaling_secret generate_secret
+ensure_secret_file signaling_hash_key generate_secret
+ensure_secret_file signaling_block_key hex16
+ensure_secret_file signaling_internal_secret generate_secret
+ensure_secret_file harp_shared_key generate_password
+ensure_secret_file recording_secret generate_secret
+ensure_secret_file janus_admin_secret generate_secret
+ensure_secret_file janus_room_key generate_secret
+ensure_secret_file worker_callback_secret generate_secret
 
-    cat > "$SHARED_DIR/.env" << EOF
-# Nextcloud SaaS — Shared Services Configuration
-# Gerado em: $(date '+%Y-%m-%d %H:%M:%S')
-# NÃO EDITE MANUALMENTE (a menos que saiba o que está fazendo)
+write_shared_env_references
+load_shared_secrets
+log_success "Secrets prontos em ${SECRETS_DIR}; .env contém apenas referências *_FILE"
 
-# Servidor
-SERVER_IP=${SERVER_IP}
-
-# Domínios dos serviços compartilhados
-COLLABORA_DOMAIN=${COLLABORA_DOMAIN}
-SIGNALING_DOMAIN=${SIGNALING_DOMAIN}
-TURN_DOMAIN=${TURN_DOMAIN}
-
-# MariaDB
-DB_ROOT_PASSWORD=${DB_ROOT_PASSWORD}
-
-# Redis
-REDIS_PASSWORD=${REDIS_PASSWORD}
-
-# Collabora
-COLLABORA_ADMIN_PASSWORD=${COLLABORA_ADMIN_PASSWORD}
-COLLABORA_ALLOWLIST=
-
-# TURN/STUN
-TURN_SECRET=${TURN_SECRET}
-
-# Signaling (HPB)
-SIGNALING_SECRET=${SIGNALING_SECRET}
-SIGNALING_HASH_KEY=${SIGNALING_HASH_KEY}
-SIGNALING_BLOCK_KEY=${SIGNALING_BLOCK_KEY}
-SIGNALING_INTERNAL_SECRET=${SIGNALING_INTERNAL_SECRET}
-
-# HaRP (AppAPI)
-HARP_SHARED_KEY=${HARP_SHARED_KEY}
-
-# Recording Server
-RECORDING_SECRET=${RECORDING_SECRET}
-
-# Janus (WebRTC media server)
-JANUS_ADMIN_SECRET=${JANUS_ADMIN_SECRET}
-JANUS_ROOM_KEY=${JANUS_ROOM_KEY}
-EOF
-    chmod 600 "$SHARED_DIR/.env"
-    log_success "Credenciais geradas em $SHARED_DIR/.env"
-else
-    log_info "Credenciais já existem, carregando..."
-    source "$SHARED_DIR/.env"
-fi
-
-# Recarregar variáveis
-source "$SHARED_DIR/.env"
-
-# ============================================================
 # CONFIGURAÇÃO DO COTURN (turnserver.conf)
 # ============================================================
 log_info "Configurando coturn..."
@@ -353,6 +376,7 @@ docker compose up -d
 # Aguardar MariaDB
 log_info "Aguardando MariaDB ficar pronto..."
 for i in $(seq 1 30); do
+    log_info "Aguardando MariaDB... tentativa ${i}/30"
     if docker exec shared-db mariadb -uroot -p"${DB_ROOT_PASSWORD}" -e "SELECT 1" &>/dev/null; then
         log_success "MariaDB pronto!"
         break
