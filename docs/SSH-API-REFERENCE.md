@@ -486,20 +486,136 @@ t=60s  → a cada 60s até done/failed (create leva 5–15min)
 
 ## 6. Idempotência
 
-Usar `--idempotency-key=<uuid-v4>` para garantir que chamadas duplicadas não criem jobs duplicados.
+### O problema que resolve
 
-```bash
-ssh root@177.104.164.187 \
-  "nextcloud-manage empresa empresa.mework360.com.br create --async --json \
-   --idempotency-key=6ba7b810-9dad-11d1-80b4-00c04fd430c8"
+Em uma REST API que chama scripts via SSH, falhas de rede podem ocorrer **após** o servidor ter
+enfileirado o job mas **antes** de você receber a resposta. Sem idempotência, um retry criaria um
+segundo job duplicado — e você teria dois `create` para o mesmo tenant, por exemplo.
+
+O `--idempotency-key` resolve isso: você gera uma chave única **no lado da API** antes de fazer a
+chamada. Se a chamada cair e você tentar de novo com a mesma chave, o servidor reconhece a
+duplicata e devolve o job original em vez de criar um novo.
+
+### Como funciona internamente
+
+```
+Chamada 1 (chave K, args A)
+  → SHA256(args A) = hash H
+  → Redis: SET nc:idem:K  "<job_id_1>:<hash H>"  NX EX 86400
+  → NX: chave não existe → gravou → retorna "new"
+  → Enfileira job_id_1
+  → Resposta: { job_id: job_id_1, state: "queued" }
+
+Chamada 2 (chave K, args A)  ← retry após timeout de rede
+  → SHA256(args A) = hash H  (mesmos args, mesma hash)
+  → Redis: SET nc:idem:K ... NX → falhou (já existe)
+  → GET nc:idem:K → "<job_id_1>:<hash H>"
+  → hash bate → retorna "same:job_id_1"
+  → Resposta: { job_id: job_id_1, state: "queued", idempotent: true }
+             ↑ mesmo job, sem criar novo
+
+Chamada 3 (chave K, args B)  ← args diferentes, bug na API
+  → SHA256(args B) = hash H2 ≠ H
+  → hash não bate → retorna "conflict"
+  → exit 3, erro: { error: "idempotency_conflict" }
 ```
 
-**Comportamento:**
-- Primeira chamada: cria job → retorna `{"job_id":"...","state":"queued"}`
-- Segunda chamada (mesma key + mesmos args): retorna o job existente com `"idempotent":true`
-- Segunda chamada (mesma key + args diferentes): retorna erro `idempotency_conflict` (exit 3)
+O dado no Redis é `nc:idem:<uuid>` com TTL de **86.400 segundos (24 horas)**.
 
-**Janela:** 24 horas por padrão.
+Caso especial: se o job original já expirou do Redis (TTL de jobs terminados é 7 dias, mas pode
+ter sido limpo manualmente) mas a idem key ainda existe dentro das 24h, o servidor limpa a idem
+key e cria um novo job normalmente — sem erro.
+
+### Uso correto na sua API
+
+```python
+import uuid
+
+# Gerar a chave UMA vez, antes de tentar a chamada
+# Associar ao recurso que está sendo criado (ex: gravar no seu banco antes do SSH)
+idempotency_key = str(uuid.uuid4())
+
+# Tentar com retry
+for attempt in range(3):
+    try:
+        result = ssh_call(
+            f"nextcloud-manage empresa empresa.mework360.com.br create --async --json"
+            f" --idempotency-key={idempotency_key}"
+        )
+        break
+    except SSHTimeoutError:
+        continue  # retry com a MESMA chave → servidor deduplica automaticamente
+```
+
+### Regras da chave
+
+| Regra | Detalhe |
+|---|---|
+| Formato | UUID v4 **lowercase** obrigatório: `^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$` |
+| Geração | Sempre no **cliente** (sua API), antes de invocar SSH |
+| Escopo | Por operação (uma chave por tentativa de criar/remover/etc.) |
+| Reutilização | **Proibida** com args diferentes → erro `idempotency_conflict` (exit 3) |
+| TTL | 24 horas no Redis |
+| Opcional | Sem a flag, cada chamada cria um job novo independentemente |
+
+### Respostas possíveis
+
+**Primeira chamada (nova):**
+```json
+{
+  "schema_version": "1",
+  "job_id": "550e8400-e29b-41d4-a716-446655440000",
+  "state": "queued",
+  "cmd": "create",
+  "client": "empresa",
+  "queued_at": "2026-05-13T04:00:00Z"
+}
+```
+
+**Retry com mesma chave + mesmos args:**
+```json
+{
+  "schema_version": "1",
+  "job_id": "550e8400-e29b-41d4-a716-446655440000",
+  "state": "running",
+  "cmd": "create",
+  "client": "empresa",
+  "queued_at": "2026-05-13T04:00:00Z",
+  "idempotent": true
+}
+```
+Note: `state` reflete o estado atual do job original (pode ser `queued`, `running` ou `done`).
+
+**Mesma chave + args diferentes (erro):**
+```json
+{
+  "schema_version": "1",
+  "error": "idempotency_conflict",
+  "message": "idempotency-key ja usada com args diferentes",
+  "retry_after": 30
+}
+```
+Exit code: `3`
+
+**Chave com formato inválido:**
+```json
+{
+  "schema_version": "1",
+  "error": "invalid_idempotency_key",
+  "message": "idempotency-key deve ser UUID v4 lowercase"
+}
+```
+Exit code: `5`
+
+### Quando usar
+
+| Situação | Usar? |
+|---|---|
+| `create --async` via API pública | **Sim** — obrigatório em produção |
+| `remove --async` via API | **Sim** — evita double-remove |
+| `backup --async` agendado | Opcional — backups duplicados são inofensivos |
+| `job status` / `job logs` | **Não** — são leituras, sem efeito colateral |
+| Chamadas de desenvolvimento/teste manual | Não necessário |
 
 ---
 
