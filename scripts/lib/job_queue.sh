@@ -51,7 +51,8 @@ _redis_exec() {
     local port="${WORKER_REDIS_PORT:-6379}"
     REDISCLI_AUTH="$pass" redis-cli -h "$host" -p "$port" "$@"
   else
-    docker exec -i -e REDISCLI_AUTH="$pass" shared-redis redis-cli "$@"
+    # Sem -i: evita que redis-cli entre em pipe-mode aguardando stdin indefinidamente.
+    docker exec -e REDISCLI_AUTH="$pass" shared-redis redis-cli "$@"
   fi
 }
 
@@ -168,7 +169,7 @@ _redis_cmd_t() {
     local port="${WORKER_REDIS_PORT:-6379}"
     REDISCLI_AUTH="$pass" timeout "$t" redis-cli -h "$host" -p "$port" -n "$db" --raw "$@"
   else
-    timeout "$t" docker exec -i -e REDISCLI_AUTH="$pass" shared-redis redis-cli -n "$db" --raw "$@"
+    timeout "$t" docker exec -e REDISCLI_AUTH="$pass" shared-redis redis-cli -n "$db" --raw "$@"
   fi
 }
 
